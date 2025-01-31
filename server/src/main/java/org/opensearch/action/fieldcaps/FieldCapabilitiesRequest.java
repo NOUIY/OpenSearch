@@ -32,17 +32,17 @@
 
 package org.opensearch.action.fieldcaps;
 
-import org.opensearch.LegacyESVersion;
 import org.opensearch.action.ActionRequest;
 import org.opensearch.action.ActionRequestValidationException;
 import org.opensearch.action.IndicesRequest;
 import org.opensearch.action.ValidateActions;
 import org.opensearch.action.support.IndicesOptions;
-import org.opensearch.common.Strings;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.io.stream.StreamOutput;
-import org.opensearch.common.xcontent.ToXContentObject;
-import org.opensearch.common.xcontent.XContentBuilder;
+import org.opensearch.common.annotation.PublicApi;
+import org.opensearch.core.common.Strings;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.core.xcontent.ToXContentObject;
+import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.index.query.QueryBuilder;
 
 import java.io.IOException;
@@ -53,7 +53,10 @@ import java.util.Set;
 
 /**
  * Transport request for retrieving field capabilities for an explicit list of fields
+ *
+ * @opensearch.api
  */
+@PublicApi(since = "1.0.0")
 public final class FieldCapabilitiesRequest extends ActionRequest implements IndicesRequest.Replaceable, ToXContentObject {
     public static final String NAME = "field_caps_request";
 
@@ -73,8 +76,8 @@ public final class FieldCapabilitiesRequest extends ActionRequest implements Ind
         indicesOptions = IndicesOptions.readIndicesOptions(in);
         mergeResults = in.readBoolean();
         includeUnmapped = in.readBoolean();
-        indexFilter = in.getVersion().onOrAfter(LegacyESVersion.V_7_9_0) ? in.readOptionalNamedWriteable(QueryBuilder.class) : null;
-        nowInMillis = in.getVersion().onOrAfter(LegacyESVersion.V_7_9_0) ? in.readOptionalLong() : null;
+        indexFilter = in.readOptionalNamedWriteable(QueryBuilder.class);
+        nowInMillis = in.readOptionalLong();
     }
 
     public FieldCapabilitiesRequest() {}
@@ -106,10 +109,8 @@ public final class FieldCapabilitiesRequest extends ActionRequest implements Ind
         indicesOptions.writeIndicesOptions(out);
         out.writeBoolean(mergeResults);
         out.writeBoolean(includeUnmapped);
-        if (out.getVersion().onOrAfter(LegacyESVersion.V_7_9_0)) {
-            out.writeOptionalNamedWriteable(indexFilter);
-            out.writeOptionalLong(nowInMillis);
-        }
+        out.writeOptionalNamedWriteable(indexFilter);
+        out.writeOptionalLong(nowInMillis);
     }
 
     @Override

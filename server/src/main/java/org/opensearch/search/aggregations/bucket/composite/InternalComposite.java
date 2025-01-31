@@ -33,11 +33,9 @@
 package org.opensearch.search.aggregations.bucket.composite;
 
 import org.apache.lucene.util.BytesRef;
-import org.opensearch.LegacyESVersion;
-import org.opensearch.Version;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.io.stream.StreamOutput;
-import org.opensearch.common.xcontent.XContentBuilder;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.search.DocValueFormat;
 import org.opensearch.search.aggregations.Aggregations;
 import org.opensearch.search.aggregations.InternalAggregation;
@@ -109,15 +107,10 @@ public class InternalComposite extends InternalMultiBucketAggregation<InternalCo
             formats.add(in.readNamedWriteable(DocValueFormat.class));
         }
         this.reverseMuls = in.readIntArray();
-        if (in.getVersion().onOrAfter(Version.V_1_3_0)) {
-            this.missingOrders = in.readArray(MissingOrder::readFromStream, MissingOrder[]::new);
-        } else {
-            this.missingOrders = new MissingOrder[reverseMuls.length];
-            Arrays.fill(this.missingOrders, MissingOrder.DEFAULT);
-        }
+        this.missingOrders = in.readArray(MissingOrder::readFromStream, MissingOrder[]::new);
         this.buckets = in.readList((input) -> new InternalBucket(input, sourceNames, formats, reverseMuls, missingOrders));
         this.afterKey = in.readBoolean() ? new CompositeKey(in) : null;
-        this.earlyTerminated = in.getVersion().onOrAfter(LegacyESVersion.V_7_6_0) ? in.readBoolean() : false;
+        this.earlyTerminated = in.readBoolean();
     }
 
     @Override
@@ -128,18 +121,13 @@ public class InternalComposite extends InternalMultiBucketAggregation<InternalCo
             out.writeNamedWriteable(format);
         }
         out.writeIntArray(reverseMuls);
-        if (out.getVersion().onOrAfter(Version.V_1_3_0)) {
-            out.writeArray((output, order) -> order.writeTo(output), missingOrders);
-        }
+        out.writeArray((output, order) -> order.writeTo(output), missingOrders);
         out.writeList(buckets);
         out.writeBoolean(afterKey != null);
         if (afterKey != null) {
             afterKey.writeTo(out);
         }
-
-        if (out.getVersion().onOrAfter(LegacyESVersion.V_7_6_0)) {
-            out.writeBoolean(earlyTerminated);
-        }
+        out.writeBoolean(earlyTerminated);
     }
 
     @Override
@@ -154,10 +142,10 @@ public class InternalComposite extends InternalMultiBucketAggregation<InternalCo
 
     @Override
     public InternalComposite create(List<InternalBucket> newBuckets) {
-        /**
-         * This is used by pipeline aggregations to filter/remove buckets so we
-         * keep the <code>afterKey</code> of the original aggregation in order
-         * to be able to retrieve the next page even if all buckets have been filtered.
+        /*
+          This is used by pipeline aggregations to filter/remove buckets so we
+          keep the <code>afterKey</code> of the original aggregation in order
+          to be able to retrieve the next page even if all buckets have been filtered.
          */
         return new InternalComposite(
             name,
@@ -351,7 +339,7 @@ public class InternalComposite extends InternalMultiBucketAggregation<InternalCo
             KeyComparable<InternalBucket> {
 
         private final CompositeKey key;
-        private final long docCount;
+        private long docCount;
         private final InternalAggregations aggregations;
         private final transient int[] reverseMuls;
         private final transient MissingOrder[] missingOrders;
@@ -448,6 +436,10 @@ public class InternalComposite extends InternalMultiBucketAggregation<InternalCo
             return docCount;
         }
 
+        public void setDocCount(long docCount) {
+            this.docCount = docCount;
+        }
+
         @Override
         public Aggregations getAggregations() {
             return aggregations;
@@ -485,8 +477,8 @@ public class InternalComposite extends InternalMultiBucketAggregation<InternalCo
 
         @Override
         public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
-            /**
-             * See {@link CompositeAggregation#bucketToXContent}
+            /*
+              See {@link CompositeAggregation#bucketToXContent}
              */
             throw new UnsupportedOperationException("not implemented");
         }

@@ -37,7 +37,7 @@ import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.MultiTermQuery;
 import org.apache.lucene.search.PrefixQuery;
 import org.apache.lucene.search.Query;
-import org.opensearch.common.ParsingException;
+import org.opensearch.core.common.ParsingException;
 import org.opensearch.test.AbstractQueryTestCase;
 import org.hamcrest.Matchers;
 
@@ -130,7 +130,7 @@ public class PrefixQueryBuilderTests extends AbstractQueryTestCase<PrefixQueryBu
         QueryShardContext context = createShardContext();
         QueryShardException e = expectThrows(QueryShardException.class, () -> query.toQuery(context));
         assertEquals(
-            "Can only use prefix queries on keyword, text and wildcard fields - not on [mapped_int] which is of type [integer]",
+            "Can only use prefix queries on keyword and text fields - not on [mapped_int] which is of type [integer]",
             e.getMessage()
         );
     }

@@ -33,47 +33,7 @@
 package org.opensearch.client;
 
 import com.fasterxml.jackson.core.JsonParseException;
-import org.opensearch.OpenSearchException;
-import org.opensearch.action.ActionListener;
-import org.opensearch.action.ActionRequest;
-import org.opensearch.action.ActionRequestValidationException;
-import org.opensearch.action.search.ClearScrollRequest;
-import org.opensearch.action.search.ClearScrollResponse;
-import org.opensearch.action.search.SearchResponse;
-import org.opensearch.action.search.SearchResponseSections;
-import org.opensearch.action.search.SearchScrollRequest;
-import org.opensearch.action.search.ShardSearchFailure;
-import org.opensearch.client.core.MainRequest;
-import org.opensearch.client.core.MainResponse;
-import org.opensearch.common.CheckedFunction;
-import org.opensearch.common.bytes.BytesReference;
-import org.opensearch.common.collect.Tuple;
-import org.opensearch.common.util.set.Sets;
-import org.opensearch.common.xcontent.NamedXContentRegistry;
-import org.opensearch.common.xcontent.ToXContent;
-import org.opensearch.common.xcontent.ToXContentFragment;
-import org.opensearch.common.xcontent.XContentBuilder;
-import org.opensearch.common.xcontent.XContentParser;
-import org.opensearch.common.xcontent.cbor.CborXContent;
-import org.opensearch.common.xcontent.smile.SmileXContent;
-import org.opensearch.index.rankeval.DiscountedCumulativeGain;
-import org.opensearch.index.rankeval.EvaluationMetric;
-import org.opensearch.index.rankeval.ExpectedReciprocalRank;
-import org.opensearch.index.rankeval.MeanReciprocalRank;
-import org.opensearch.index.rankeval.MetricDetail;
-import org.opensearch.index.rankeval.PrecisionAtK;
-import org.opensearch.index.rankeval.RecallAtK;
-import org.opensearch.join.aggregations.ChildrenAggregationBuilder;
-import org.opensearch.rest.RestStatus;
-import org.opensearch.search.SearchHits;
-import org.opensearch.search.aggregations.Aggregation;
-import org.opensearch.search.aggregations.InternalAggregations;
-import org.opensearch.search.aggregations.matrix.stats.MatrixStatsAggregationBuilder;
-import org.opensearch.search.suggest.Suggest;
-import org.opensearch.test.OpenSearchTestCase;
-import org.opensearch.test.InternalAggregationTestCase;
-import org.opensearch.test.rest.yaml.restspec.ClientYamlSuiteRestApi;
-import org.opensearch.test.rest.yaml.restspec.ClientYamlSuiteRestSpec;
+
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.core5.http.ClassicHttpResponse;
 import org.apache.hc.core5.http.ContentType;
@@ -85,6 +45,47 @@ import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.apache.hc.core5.http.message.BasicClassicHttpResponse;
 import org.apache.hc.core5.http.message.RequestLine;
 import org.apache.hc.core5.http.message.StatusLine;
+import org.opensearch.OpenSearchException;
+import org.opensearch.action.ActionRequest;
+import org.opensearch.action.ActionRequestValidationException;
+import org.opensearch.action.search.ClearScrollRequest;
+import org.opensearch.action.search.ClearScrollResponse;
+import org.opensearch.action.search.SearchResponse;
+import org.opensearch.action.search.SearchResponseSections;
+import org.opensearch.action.search.SearchScrollRequest;
+import org.opensearch.action.search.ShardSearchFailure;
+import org.opensearch.client.core.MainRequest;
+import org.opensearch.client.core.MainResponse;
+import org.opensearch.common.CheckedFunction;
+import org.opensearch.common.collect.Tuple;
+import org.opensearch.common.util.set.Sets;
+import org.opensearch.common.xcontent.cbor.CborXContent;
+import org.opensearch.common.xcontent.smile.SmileXContent;
+import org.opensearch.core.action.ActionListener;
+import org.opensearch.core.common.bytes.BytesReference;
+import org.opensearch.core.rest.RestStatus;
+import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.core.xcontent.ToXContentFragment;
+import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.core.xcontent.XContentParser;
+import org.opensearch.index.rankeval.DiscountedCumulativeGain;
+import org.opensearch.index.rankeval.EvaluationMetric;
+import org.opensearch.index.rankeval.ExpectedReciprocalRank;
+import org.opensearch.index.rankeval.MeanReciprocalRank;
+import org.opensearch.index.rankeval.MetricDetail;
+import org.opensearch.index.rankeval.PrecisionAtK;
+import org.opensearch.index.rankeval.RecallAtK;
+import org.opensearch.join.aggregations.ChildrenAggregationBuilder;
+import org.opensearch.search.SearchHits;
+import org.opensearch.search.aggregations.Aggregation;
+import org.opensearch.search.aggregations.InternalAggregations;
+import org.opensearch.search.aggregations.matrix.stats.MatrixStatsAggregationBuilder;
+import org.opensearch.search.suggest.Suggest;
+import org.opensearch.test.InternalAggregationTestCase;
+import org.opensearch.test.OpenSearchTestCase;
+import org.opensearch.test.rest.yaml.restspec.ClientYamlSuiteRestApi;
+import org.opensearch.test.rest.yaml.restspec.ClientYamlSuiteRestSpec;
 import org.hamcrest.Matchers;
 import org.junit.Before;
 
@@ -106,7 +107,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static org.opensearch.common.xcontent.XContentHelper.toXContent;
+import static org.opensearch.core.xcontent.XContentHelper.toXContent;
 import static org.hamcrest.CoreMatchers.endsWith;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.instanceOf;
@@ -236,7 +237,7 @@ public class RestHighLevelClientTests extends OpenSearchTestCase {
             RequestOptions.DEFAULT
         );
         assertEquals(mockSearchResponse.getScrollId(), searchResponse.getScrollId());
-        assertEquals(0, searchResponse.getHits().getTotalHits().value);
+        assertEquals(0, searchResponse.getHits().getTotalHits().value());
         assertEquals(5, searchResponse.getTotalShards());
         assertEquals(5, searchResponse.getSuccessfulShards());
         assertEquals(100, searchResponse.getTook().getMillis());
@@ -425,13 +426,9 @@ public class RestHighLevelClientTests extends OpenSearchTestCase {
         {
             IOException ioe = expectThrows(
                 IOException.class,
-                () -> restHighLevelClient.performRequest(
-                    mainRequest,
-                    requestConverter,
-                    RequestOptions.DEFAULT,
-                    response -> { throw new IllegalStateException(); },
-                    Collections.emptySet()
-                )
+                () -> restHighLevelClient.performRequest(mainRequest, requestConverter, RequestOptions.DEFAULT, response -> {
+                    throw new IllegalStateException();
+                }, Collections.emptySet())
             );
             assertEquals(
                 "Unable to parse response body for Response{requestLine=GET / http/1.1, host=http://localhost:9200, "
@@ -573,13 +570,9 @@ public class RestHighLevelClientTests extends OpenSearchTestCase {
         when(restClient.performRequest(any(Request.class))).thenThrow(responseException);
         OpenSearchException openSearchException = expectThrows(
             OpenSearchException.class,
-            () -> restHighLevelClient.performRequest(
-                mainRequest,
-                requestConverter,
-                RequestOptions.DEFAULT,
-                response -> { throw new IllegalStateException(); },
-                Collections.singleton(404)
-            )
+            () -> restHighLevelClient.performRequest(mainRequest, requestConverter, RequestOptions.DEFAULT, response -> {
+                throw new IllegalStateException();
+            }, Collections.singleton(404))
         );
         assertEquals(RestStatus.NOT_FOUND, openSearchException.status());
         assertSame(responseException, openSearchException.getCause());
@@ -596,13 +589,9 @@ public class RestHighLevelClientTests extends OpenSearchTestCase {
         when(restClient.performRequest(any(Request.class))).thenThrow(responseException);
         OpenSearchException openSearchException = expectThrows(
             OpenSearchException.class,
-            () -> restHighLevelClient.performRequest(
-                mainRequest,
-                requestConverter,
-                RequestOptions.DEFAULT,
-                response -> { throw new IllegalStateException(); },
-                Collections.singleton(404)
-            )
+            () -> restHighLevelClient.performRequest(mainRequest, requestConverter, RequestOptions.DEFAULT, response -> {
+                throw new IllegalStateException();
+            }, Collections.singleton(404))
         );
         assertEquals(RestStatus.NOT_FOUND, openSearchException.status());
         assertSame(responseException, openSearchException.getSuppressed()[0]);
@@ -887,6 +876,7 @@ public class RestHighLevelClientTests extends OpenSearchTestCase {
             "nodes.reload_secure_settings",
             "search_shards",
             "remote_store.restore",
+            "remote_store.stats",
             "cluster.put_weighted_routing",
             "cluster.get_weighted_routing",
             "cluster.delete_weighted_routing",
@@ -1005,37 +995,34 @@ public class RestHighLevelClientTests extends OpenSearchTestCase {
         }
 
         assertEquals("incorrect number of exceptions for method [" + method + "]", 1, method.getExceptionTypes().length);
+        final Class<?>[] parameterTypes = method.getParameterTypes();
         // a few methods don't accept a request object as argument
         if (APIS_WITHOUT_REQUEST_OBJECT.contains(apiName)) {
-            assertEquals("incorrect number of arguments for method [" + method + "]", 1, method.getParameterTypes().length);
-            assertThat(
-                "the parameter to method [" + method + "] is the wrong type",
-                method.getParameterTypes()[0],
-                equalTo(RequestOptions.class)
-            );
+            assertEquals("incorrect number of arguments for method [" + method + "]", 1, method.getParameterCount());
+            assertThat("the parameter to method [" + method + "] is the wrong type", parameterTypes[0], equalTo(RequestOptions.class));
         } else {
-            assertEquals("incorrect number of arguments for method [" + method + "]", 2, method.getParameterTypes().length);
+            assertEquals("incorrect number of arguments for method [" + method + "]", 2, method.getParameterCount());
             // This is no longer true for all methods. Some methods can contain these 2 args backwards because of deprecation
-            if (method.getParameterTypes()[0].equals(RequestOptions.class)) {
+            if (parameterTypes[0].equals(RequestOptions.class)) {
                 assertThat(
                     "the first parameter to method [" + method + "] is the wrong type",
-                    method.getParameterTypes()[0],
+                    parameterTypes[0],
                     equalTo(RequestOptions.class)
                 );
                 assertThat(
                     "the second parameter to method [" + method + "] is the wrong type",
-                    method.getParameterTypes()[1].getSimpleName(),
+                    parameterTypes[1].getSimpleName(),
                     endsWith("Request")
                 );
             } else {
                 assertThat(
                     "the first parameter to method [" + method + "] is the wrong type",
-                    method.getParameterTypes()[0].getSimpleName(),
+                    parameterTypes[0].getSimpleName(),
                     endsWith("Request")
                 );
                 assertThat(
                     "the second parameter to method [" + method + "] is the wrong type",
-                    method.getParameterTypes()[1],
+                    parameterTypes[1],
                     equalTo(RequestOptions.class)
                 );
             }
@@ -1049,39 +1036,40 @@ public class RestHighLevelClientTests extends OpenSearchTestCase {
         );
         assertThat("async method [" + method + "] should return Cancellable", method.getReturnType(), equalTo(Cancellable.class));
         assertEquals("async method [" + method + "] should not throw any exceptions", 0, method.getExceptionTypes().length);
+        final Class<?>[] parameterTypes = method.getParameterTypes();
         if (APIS_WITHOUT_REQUEST_OBJECT.contains(apiName.replaceAll("_async$", ""))) {
-            assertEquals(2, method.getParameterTypes().length);
-            assertThat(method.getParameterTypes()[0], equalTo(RequestOptions.class));
-            assertThat(method.getParameterTypes()[1], equalTo(ActionListener.class));
+            assertEquals(2, parameterTypes.length);
+            assertThat(parameterTypes[0], equalTo(RequestOptions.class));
+            assertThat(parameterTypes[1], equalTo(ActionListener.class));
         } else {
-            assertEquals("async method [" + method + "] has the wrong number of arguments", 3, method.getParameterTypes().length);
+            assertEquals("async method [" + method + "] has the wrong number of arguments", 3, method.getParameterCount());
             // This is no longer true for all methods. Some methods can contain these 2 args backwards because of deprecation
-            if (method.getParameterTypes()[0].equals(RequestOptions.class)) {
+            if (parameterTypes[0].equals(RequestOptions.class)) {
                 assertThat(
                     "the first parameter to async method [" + method + "] should be a request type",
-                    method.getParameterTypes()[0],
+                    parameterTypes[0],
                     equalTo(RequestOptions.class)
                 );
                 assertThat(
                     "the second parameter to async method [" + method + "] is the wrong type",
-                    method.getParameterTypes()[1].getSimpleName(),
+                    parameterTypes[1].getSimpleName(),
                     endsWith("Request")
                 );
             } else {
                 assertThat(
                     "the first parameter to async method [" + method + "] should be a request type",
-                    method.getParameterTypes()[0].getSimpleName(),
+                    parameterTypes[0].getSimpleName(),
                     endsWith("Request")
                 );
                 assertThat(
                     "the second parameter to async method [" + method + "] is the wrong type",
-                    method.getParameterTypes()[1],
+                    parameterTypes[1],
                     equalTo(RequestOptions.class)
                 );
             }
             assertThat(
                 "the third parameter to async method [" + method + "] is the wrong type",
-                method.getParameterTypes()[2],
+                parameterTypes[2],
                 equalTo(ActionListener.class)
             );
         }
@@ -1094,16 +1082,17 @@ public class RestHighLevelClientTests extends OpenSearchTestCase {
         ClientYamlSuiteRestSpec restSpec
     ) {
         String methodName = extractMethodName(apiName);
+        final Class<?>[] parameterTypes = method.getParameterTypes();
         assertTrue("submit task method [" + method.getName() + "] doesn't have corresponding sync method", methods.containsKey(methodName));
-        assertEquals("submit task method [" + method + "] has the wrong number of arguments", 2, method.getParameterTypes().length);
+        assertEquals("submit task method [" + method + "] has the wrong number of arguments", 2, method.getParameterCount());
         assertThat(
             "the first parameter to submit task method [" + method + "] is the wrong type",
-            method.getParameterTypes()[0].getSimpleName(),
+            parameterTypes[0].getSimpleName(),
             endsWith("Request")
         );
         assertThat(
             "the second parameter to submit task method [" + method + "] is the wrong type",
-            method.getParameterTypes()[1],
+            parameterTypes[1],
             equalTo(RequestOptions.class)
         );
 

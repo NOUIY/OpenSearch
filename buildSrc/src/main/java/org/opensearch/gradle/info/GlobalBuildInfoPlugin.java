@@ -45,12 +45,16 @@ import org.gradle.api.provider.ProviderFactory;
 import org.gradle.internal.jvm.Jvm;
 import org.gradle.internal.jvm.inspection.JvmInstallationMetadata;
 import org.gradle.internal.jvm.inspection.JvmMetadataDetector;
+import org.gradle.jvm.toolchain.internal.InstallationLocation;
 import org.gradle.util.GradleVersion;
 
 import javax.inject.Inject;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -71,8 +75,8 @@ import java.util.stream.Stream;
 
 public class GlobalBuildInfoPlugin implements Plugin<Project> {
     private static final Logger LOGGER = Logging.getLogger(GlobalBuildInfoPlugin.class);
-    private static final String DEFAULT_LEGACY_VERSION_JAVA_FILE_PATH = "server/src/main/java/org/opensearch/LegacyESVersion.java";
-    private static final String DEFAULT_VERSION_JAVA_FILE_PATH = "server/src/main/java/org/opensearch/Version.java";
+    private static final String DEFAULT_LEGACY_VERSION_JAVA_FILE_PATH = "libs/core/src/main/java/org/opensearch/LegacyESVersion.java";
+    private static final String DEFAULT_VERSION_JAVA_FILE_PATH = "libs/core/src/main/java/org/opensearch/Version.java";
     private static Integer _defaultParallel = null;
 
     private final JvmMetadataDetector jvmMetadataDetector;
@@ -149,7 +153,7 @@ public class GlobalBuildInfoPlugin implements Plugin<Project> {
             versionLines.addAll(IOUtils.readLines(fis2, "UTF-8"));
             return new BwcVersions(versionLines);
         } catch (IOException e) {
-            throw new IllegalStateException("Unable to resolve to resolve bwc versions from versionsFile.", e);
+            throw new IllegalStateException("Unable to resolve bwc versions from versionsFile.", e);
         }
     }
 
@@ -195,7 +199,50 @@ public class GlobalBuildInfoPlugin implements Plugin<Project> {
     }
 
     private JvmInstallationMetadata getJavaInstallation(File javaHome) {
-        return jvmMetadataDetector.getMetadata(javaHome);
+        InstallationLocation location = null;
+
+        try {
+            try {
+                // The InstallationLocation(File, String) is used by Gradle pre-8.8
+                location = (InstallationLocation) MethodHandles.publicLookup()
+                    .findConstructor(InstallationLocation.class, MethodType.methodType(void.class, File.class, String.class))
+                    .invokeExact(javaHome, "Java home");
+            } catch (Throwable ex) {
+                // The InstallationLocation::userDefined is used by Gradle post-8.7
+                location = (InstallationLocation) MethodHandles.publicLookup()
+                    .findStatic(
+                        InstallationLocation.class,
+                        "userDefined",
+                        MethodType.methodType(InstallationLocation.class, File.class, String.class)
+                    )
+                    .invokeExact(javaHome, "Java home");
+
+            }
+        } catch (Throwable ex) {
+            throw new IllegalStateException("Unable to find suitable InstallationLocation constructor / factory method", ex);
+        }
+
+        try {
+            try {
+                // The getMetadata(File) is used by Gradle pre-7.6
+                return (JvmInstallationMetadata) MethodHandles.publicLookup()
+                    .findVirtual(JvmMetadataDetector.class, "getMetadata", MethodType.methodType(JvmInstallationMetadata.class, File.class))
+                    .bindTo(jvmMetadataDetector)
+                    .invokeExact(location.getLocation());
+            } catch (NoSuchMethodException | IllegalAccessException ex) {
+                // The getMetadata(InstallationLocation) is used by Gradle post-7.6
+                return (JvmInstallationMetadata) MethodHandles.publicLookup()
+                    .findVirtual(
+                        JvmMetadataDetector.class,
+                        "getMetadata",
+                        MethodType.methodType(JvmInstallationMetadata.class, InstallationLocation.class)
+                    )
+                    .bindTo(jvmMetadataDetector)
+                    .invokeExact(location);
+            }
+        } catch (Throwable ex) {
+            throw new IllegalStateException("Unable to find suitable JvmMetadataDetector::getMetadata", ex);
+        }
     }
 
     private List<JavaHome> getAvailableJavaVersions(JavaVersion minimumCompilerVersion) {
@@ -205,7 +252,7 @@ public class GlobalBuildInfoPlugin implements Plugin<Project> {
             String javaHomeEnvVarName = getJavaHomeEnvVarName(Integer.toString(version));
             if (System.getenv(javaHomeEnvVarName) != null) {
                 File javaHomeDirectory = new File(findJavaHome(Integer.toString(version)));
-                JvmInstallationMetadata javaInstallation = jvmMetadataDetector.getMetadata(javaHomeDirectory);
+                JvmInstallationMetadata javaInstallation = getJavaInstallation(javaHomeDirectory);
                 JavaHome javaHome = JavaHome.of(version, providers.provider(() -> {
                     int actualVersion = Integer.parseInt(javaInstallation.getLanguageVersion().getMajorVersion());
                     if (actualVersion != version) {

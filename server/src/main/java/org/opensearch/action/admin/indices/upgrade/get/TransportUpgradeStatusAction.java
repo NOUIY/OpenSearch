@@ -34,7 +34,6 @@ package org.opensearch.action.admin.indices.upgrade.get;
 
 import org.opensearch.Version;
 import org.opensearch.action.support.ActionFilters;
-import org.opensearch.action.support.DefaultShardOperationFailedException;
 import org.opensearch.action.support.broadcast.node.TransportBroadcastByNodeAction;
 import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.block.ClusterBlockException;
@@ -44,7 +43,8 @@ import org.opensearch.cluster.routing.ShardRouting;
 import org.opensearch.cluster.routing.ShardsIterator;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
-import org.opensearch.common.io.stream.StreamInput;
+import org.opensearch.core.action.support.DefaultShardOperationFailedException;
+import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.index.IndexService;
 import org.opensearch.index.engine.Segment;
 import org.opensearch.index.shard.IndexShard;
@@ -121,7 +121,7 @@ public class TransportUpgradeStatusAction extends TransportBroadcastByNodeAction
         ClusterState clusterState
     ) {
         return new UpgradeStatusResponse(
-            responses.toArray(new ShardUpgradeStatus[responses.size()]),
+            responses.toArray(new ShardUpgradeStatus[0]),
             totalShards,
             successfulShards,
             failedShards,

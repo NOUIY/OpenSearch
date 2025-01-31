@@ -31,18 +31,17 @@
 
 package org.opensearch.action.admin.cluster.configuration;
 
-import org.opensearch.LegacyESVersion;
 import org.opensearch.action.ActionRequestValidationException;
 import org.opensearch.action.support.clustermanager.ClusterManagerNodeRequest;
 import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.coordination.CoordinationMetadata.VotingConfigExclusion;
 import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.cluster.node.DiscoveryNodes;
-import org.opensearch.common.Strings;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.io.stream.StreamOutput;
 import org.opensearch.common.logging.DeprecationLogger;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.core.common.Strings;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -110,13 +109,8 @@ public class AddVotingConfigExclusionsRequest extends ClusterManagerNodeRequest<
     public AddVotingConfigExclusionsRequest(StreamInput in) throws IOException {
         super(in);
         nodeDescriptions = in.readStringArray();
-        if (in.getVersion().onOrAfter(LegacyESVersion.V_7_8_0)) {
-            nodeIds = in.readStringArray();
-            nodeNames = in.readStringArray();
-        } else {
-            nodeIds = Strings.EMPTY_ARRAY;
-            nodeNames = Strings.EMPTY_ARRAY;
-        }
+        nodeIds = in.readStringArray();
+        nodeNames = in.readStringArray();
         timeout = in.readTimeValue();
 
         if (nodeDescriptions.length > 0) {
@@ -249,10 +243,8 @@ public class AddVotingConfigExclusionsRequest extends ClusterManagerNodeRequest<
     public void writeTo(StreamOutput out) throws IOException {
         super.writeTo(out);
         out.writeStringArray(nodeDescriptions);
-        if (out.getVersion().onOrAfter(LegacyESVersion.V_7_8_0)) {
-            out.writeStringArray(nodeIds);
-            out.writeStringArray(nodeNames);
-        }
+        out.writeStringArray(nodeIds);
+        out.writeStringArray(nodeNames);
         out.writeTimeValue(timeout);
     }
 

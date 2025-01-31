@@ -43,7 +43,7 @@ import java.util.Map;
 
 /**
  * Backwards compatible test* method provider (public, non-static).
- *
+ * <p>
  * copy of org.apache.lucene.util.LuceneJUnit3MethodProvider to avoid a dependency between build and test fw.
  */
 public final class JUnit3MethodProvider implements TestMethodProvider {
@@ -59,7 +59,7 @@ public final class JUnit3MethodProvider implements TestMethodProvider {
             if (m.getName().startsWith("test")
                 && Modifier.isPublic(m.getModifiers())
                 && !Modifier.isStatic(m.getModifiers())
-                && m.getParameterTypes().length == 0) {
+                && m.getParameterCount() == 0) {
                 result.add(m);
             }
         }

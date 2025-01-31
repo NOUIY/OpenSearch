@@ -41,7 +41,7 @@ import org.apache.lucene.store.Lock;
 import org.apache.lucene.store.NoLockFactory;
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.concurrent.GatedCloseable;
-import org.opensearch.index.Index;
+import org.opensearch.core.index.Index;
 import org.opensearch.index.engine.Engine;
 import org.opensearch.index.store.Store;
 
@@ -96,7 +96,7 @@ final class LocalShardSnapshot implements Closeable {
             @Override
             public String[] listAll() throws IOException {
                 Collection<String> fileNames = wrappedIndexCommit.get().getFileNames();
-                final String[] fileNameArray = fileNames.toArray(new String[fileNames.size()]);
+                final String[] fileNameArray = fileNames.toArray(new String[0]);
                 return fileNameArray;
             }
 

@@ -32,15 +32,14 @@
 
 package org.opensearch.common.settings;
 
-import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
-import org.opensearch.common.Strings;
+import org.apache.logging.log4j.Logger;
 import org.opensearch.common.inject.Binder;
 import org.opensearch.common.inject.Module;
 import org.opensearch.common.util.FeatureFlags;
-import org.opensearch.common.xcontent.ToXContent;
-import org.opensearch.common.xcontent.XContentBuilder;
-import org.opensearch.common.xcontent.XContentType;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
+import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.core.xcontent.XContentBuilder;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -87,10 +86,19 @@ public class SettingsModule implements Module {
         for (Setting<?> setting : IndexScopedSettings.BUILT_IN_INDEX_SETTINGS) {
             registerSetting(setting);
         }
+        for (Setting<?> setting : FeatureFlagSettings.BUILT_IN_FEATURE_FLAGS) {
+            registerSetting(setting);
+        }
+
+        for (Map.Entry<List<String>, List<Setting>> featureFlaggedSetting : ClusterSettings.FEATURE_FLAGGED_CLUSTER_SETTINGS.entrySet()) {
+            if (featureFlaggedSetting.getKey().stream().allMatch(FeatureFlags::isEnabled)) {
+                featureFlaggedSetting.getValue().forEach(this::registerSetting);
+            }
+        }
 
         for (Map.Entry<String, List<Setting>> featureFlaggedSetting : IndexScopedSettings.FEATURE_FLAGGED_INDEX_SETTINGS.entrySet()) {
             if (FeatureFlags.isEnabled(featureFlaggedSetting.getKey())) {
-                featureFlaggedSetting.getValue().forEach(feature -> registerSetting(feature));
+                featureFlaggedSetting.getValue().forEach(this::registerSetting);
             }
         }
 
@@ -148,12 +156,12 @@ public class SettingsModule implements Module {
                 builder.append(System.lineSeparator());
                 builder.append(System.lineSeparator());
                 builder.append("curl -XPUT 'http://localhost:9200/_all/_settings?preserve_existing=true' -d '");
-                try (XContentBuilder xContentBuilder = XContentBuilder.builder(XContentType.JSON.xContent())) {
+                try (XContentBuilder xContentBuilder = MediaTypeRegistry.JSON.contentBuilder()) {
                     xContentBuilder.prettyPrint();
                     xContentBuilder.startObject();
                     indexSettings.toXContent(xContentBuilder, new ToXContent.MapParams(Collections.singletonMap("flat_settings", "true")));
                     xContentBuilder.endObject();
-                    builder.append(Strings.toString(xContentBuilder));
+                    builder.append(xContentBuilder);
                 }
                 builder.append("'");
                 builder.append(System.lineSeparator());
@@ -177,6 +185,45 @@ public class SettingsModule implements Module {
         binder.bind(SettingsFilter.class).toInstance(settingsFilter);
         binder.bind(ClusterSettings.class).toInstance(clusterSettings);
         binder.bind(IndexScopedSettings.class).toInstance(indexScopedSettings);
+    }
+
+    /**
+     * Dynamically registers a new Setting at Runtime. This method is mostly used by plugins/extensions
+     * to register new settings at runtime. Settings can be of Node Scope or Index Scope.
+     * @param setting which is being registered in the cluster.
+     * @return boolean value is set to true when successfully registered, else returns false
+     */
+    public boolean registerDynamicSetting(Setting<?> setting) {
+        boolean onNodeSetting = false;
+        boolean onIndexSetting = false;
+        try {
+            if (setting.hasNodeScope()) {
+                onNodeSetting = clusterSettings.registerSetting(setting);
+            }
+            if (setting.hasIndexScope()) {
+                onIndexSetting = indexScopedSettings.registerSetting(setting);
+            }
+            try {
+                registerSetting(setting);
+                if (onNodeSetting || onIndexSetting) {
+                    logger.info("Registered new Setting: " + setting.getKey() + " successfully ");
+                    return true;
+                }
+            } catch (IllegalArgumentException ex) {
+                if (onNodeSetting) {
+                    clusterSettings.unregisterSetting(setting);
+                }
+
+                if (onIndexSetting) {
+                    indexScopedSettings.unregisterSetting(setting);
+                }
+                throw ex;
+            }
+        } catch (Exception e) {
+            logger.error("Could not register setting " + setting.getKey());
+            throw new SettingsException("Could not register setting:" + setting.getKey());
+        }
+        return false;
     }
 
     /**

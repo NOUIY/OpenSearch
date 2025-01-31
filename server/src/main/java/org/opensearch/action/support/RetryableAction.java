@@ -34,15 +34,17 @@ package org.opensearch.action.support;
 
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.message.ParameterizedMessage;
-import org.opensearch.action.ActionListener;
 import org.opensearch.action.ActionRunnable;
-import org.opensearch.common.Randomness;
+import org.opensearch.action.bulk.BackoffPolicy;
+import org.opensearch.common.annotation.PublicApi;
 import org.opensearch.common.unit.TimeValue;
-import org.opensearch.common.util.concurrent.OpenSearchRejectedExecutionException;
+import org.opensearch.core.action.ActionListener;
+import org.opensearch.core.concurrency.OpenSearchRejectedExecutionException;
 import org.opensearch.threadpool.Scheduler;
 import org.opensearch.threadpool.ThreadPool;
 
 import java.util.ArrayDeque;
+import java.util.Iterator;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -51,8 +53,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * default. The action will be retried with exponentially increasing delay periods until the timeout period
  * has been reached.
  *
- * @opensearch.internal
+ * @opensearch.api
  */
+@PublicApi(since = "1.0.0")
 public abstract class RetryableAction<Response> {
 
     private final Logger logger;
@@ -64,6 +67,7 @@ public abstract class RetryableAction<Response> {
     private final long startMillis;
     private final ActionListener<Response> finalListener;
     private final String executor;
+    private final BackoffPolicy backoffPolicy;
 
     private volatile Scheduler.ScheduledCancellable retryTask;
 
@@ -74,7 +78,15 @@ public abstract class RetryableAction<Response> {
         TimeValue timeoutValue,
         ActionListener<Response> listener
     ) {
-        this(logger, threadPool, initialDelay, timeoutValue, listener, ThreadPool.Names.SAME);
+        this(
+            logger,
+            threadPool,
+            initialDelay,
+            timeoutValue,
+            listener,
+            BackoffPolicy.exponentialFullJitterBackoff(initialDelay.getMillis()),
+            ThreadPool.Names.SAME
+        );
     }
 
     public RetryableAction(
@@ -83,6 +95,7 @@ public abstract class RetryableAction<Response> {
         TimeValue initialDelay,
         TimeValue timeoutValue,
         ActionListener<Response> listener,
+        BackoffPolicy backoffPolicy,
         String executor
     ) {
         this.logger = logger;
@@ -95,10 +108,11 @@ public abstract class RetryableAction<Response> {
         this.startMillis = threadPool.relativeTimeInMillis();
         this.finalListener = listener;
         this.executor = executor;
+        this.backoffPolicy = backoffPolicy;
     }
 
     public void run() {
-        final RetryingListener retryingListener = new RetryingListener(initialDelayMillis, null);
+        final RetryingListener retryingListener = new RetryingListener(backoffPolicy.iterator(), null);
         final Runnable runnable = createRunnable(retryingListener);
         threadPool.executor(executor).execute(runnable);
     }
@@ -142,16 +156,24 @@ public abstract class RetryableAction<Response> {
 
     public void onFinished() {}
 
+    /**
+     * Retry able task may want to throw different Exception on timeout,
+     * they can override it method for that.
+     */
+    public Exception getTimeoutException(Exception e) {
+        return e;
+    }
+
     private class RetryingListener implements ActionListener<Response> {
 
         private static final int MAX_EXCEPTIONS = 4;
 
-        private final long delayMillisBound;
         private ArrayDeque<Exception> caughtExceptions;
+        private Iterator<TimeValue> backoffDelayIterator;
 
-        private RetryingListener(long delayMillisBound, ArrayDeque<Exception> caughtExceptions) {
-            this.delayMillisBound = delayMillisBound;
+        private RetryingListener(Iterator<TimeValue> backoffDelayIterator, ArrayDeque<Exception> caughtExceptions) {
             this.caughtExceptions = caughtExceptions;
+            this.backoffDelayIterator = backoffDelayIterator;
         }
 
         @Override
@@ -171,16 +193,13 @@ public abstract class RetryableAction<Response> {
                         () -> new ParameterizedMessage("retryable action timed out after {}", TimeValue.timeValueMillis(elapsedMillis)),
                         e
                     );
-                    onFinalFailure(e);
+                    onFinalFailure(getTimeoutException(e));
                 } else {
                     addException(e);
 
-                    final long nextDelayMillisBound = Math.min(delayMillisBound * 2, Integer.MAX_VALUE);
-                    final RetryingListener retryingListener = new RetryingListener(nextDelayMillisBound, caughtExceptions);
-                    final Runnable runnable = createRunnable(retryingListener);
-                    final long delayMillis = Randomness.get().nextInt(Math.toIntExact(delayMillisBound)) + 1;
+                    final TimeValue delay = backoffDelayIterator.next();
+                    final Runnable runnable = createRunnable(this);
                     if (isDone.get() == false) {
-                        final TimeValue delay = TimeValue.timeValueMillis(delayMillis);
                         logger.debug(() -> new ParameterizedMessage("retrying action that failed in {}", delay), e);
                         try {
                             retryTask = threadPool.schedule(runnable, delay, executor);

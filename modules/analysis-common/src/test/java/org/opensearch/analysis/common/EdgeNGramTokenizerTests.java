@@ -36,20 +36,23 @@ import org.apache.lucene.analysis.Tokenizer;
 import org.opensearch.Version;
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.core.index.Index;
 import org.opensearch.env.Environment;
 import org.opensearch.env.TestEnvironment;
-import org.opensearch.index.Index;
 import org.opensearch.index.IndexSettings;
 import org.opensearch.index.analysis.IndexAnalyzers;
 import org.opensearch.index.analysis.NamedAnalyzer;
 import org.opensearch.indices.analysis.AnalysisModule;
-import org.opensearch.test.OpenSearchTokenStreamTestCase;
 import org.opensearch.test.IndexSettingsModule;
+import org.opensearch.test.OpenSearchTokenStreamTestCase;
 import org.opensearch.test.VersionUtils;
 
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.Collections;
+
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasToString;
 
 public class EdgeNGramTokenizerTests extends OpenSearchTokenStreamTestCase {
 
@@ -76,21 +79,28 @@ public class EdgeNGramTokenizerTests extends OpenSearchTokenStreamTestCase {
             }
         }
 
-        // Check deprecated name as well, needs version before 8.0 because throws IAE after that
+        // Check deprecated name as well, needs version before 3.0 because throws IAE after that
         {
             try (
                 IndexAnalyzers indexAnalyzers = buildAnalyzers(
-                    VersionUtils.randomVersionBetween(random(), Version.V_1_0_0, Version.CURRENT),
+                    VersionUtils.randomVersionBetween(random(), Version.V_2_0_0, VersionUtils.getPreviousVersion(Version.V_3_0_0)),
                     "edgeNGram"
                 )
             ) {
                 NamedAnalyzer analyzer = indexAnalyzers.get("my_analyzer");
                 assertNotNull(analyzer);
                 assertAnalyzesTo(analyzer, "test", new String[] { "t", "te" });
-
             }
         }
 
+        // Check IAE from 3.0 onward
+        {
+            final IllegalArgumentException e = expectThrows(
+                IllegalArgumentException.class,
+                () -> buildAnalyzers(VersionUtils.randomVersionBetween(random(), Version.V_3_0_0, Version.CURRENT), "edgeNGram")
+            );
+            assertThat(e, hasToString(containsString("The [edgeNGram] tokenizer name was deprecated pre 1.0.")));
+        }
     }
 
     public void testCustomTokenChars() throws IOException {

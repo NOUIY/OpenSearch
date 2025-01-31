@@ -31,7 +31,6 @@
 
 package org.opensearch.action.admin.indices.create;
 
-import org.opensearch.action.ActionListener;
 import org.opensearch.action.ActionType;
 import org.opensearch.action.support.ActionFilters;
 import org.opensearch.action.support.ActiveShardCount;
@@ -42,18 +41,21 @@ import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.ack.ClusterStateUpdateResponse;
 import org.opensearch.cluster.block.ClusterBlockException;
 import org.opensearch.cluster.block.ClusterBlockLevel;
-import org.opensearch.cluster.metadata.IndexNameExpressionResolver;
 import org.opensearch.cluster.metadata.ComposableIndexTemplate;
 import org.opensearch.cluster.metadata.ComposableIndexTemplate.DataStreamTemplate;
+import org.opensearch.cluster.metadata.IndexNameExpressionResolver;
 import org.opensearch.cluster.metadata.Metadata;
 import org.opensearch.cluster.metadata.MetadataCreateDataStreamService;
 import org.opensearch.cluster.metadata.MetadataCreateDataStreamService.CreateDataStreamClusterStateUpdateRequest;
 import org.opensearch.cluster.metadata.MetadataCreateIndexService;
 import org.opensearch.cluster.metadata.MetadataIndexTemplateService;
+import org.opensearch.cluster.service.ClusterManagerTaskKeys;
+import org.opensearch.cluster.service.ClusterManagerTaskThrottler;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.Priority;
 import org.opensearch.common.inject.Inject;
-import org.opensearch.common.io.stream.StreamInput;
+import org.opensearch.core.action.ActionListener;
+import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportService;
 
@@ -84,6 +86,7 @@ public final class AutoCreateAction extends ActionType<CreateIndexResponse> {
         private final ActiveShardsObserver activeShardsObserver;
         private final MetadataCreateIndexService createIndexService;
         private final MetadataCreateDataStreamService metadataCreateDataStreamService;
+        private final ClusterManagerTaskThrottler.ThrottlingKey autoCreateTaskKey;
 
         @Inject
         public TransportAction(
@@ -99,6 +102,9 @@ public final class AutoCreateAction extends ActionType<CreateIndexResponse> {
             this.activeShardsObserver = new ActiveShardsObserver(clusterService, threadPool);
             this.createIndexService = createIndexService;
             this.metadataCreateDataStreamService = metadataCreateDataStreamService;
+
+            // Task is onboarded for throttling, it will get retried from associated TransportClusterManagerNodeAction.
+            autoCreateTaskKey = clusterService.registerClusterManagerTask(ClusterManagerTaskKeys.AUTO_CREATE_KEY, true);
         }
 
         @Override
@@ -126,7 +132,9 @@ public final class AutoCreateAction extends ActionType<CreateIndexResponse> {
                         new String[] { indexName },
                         ActiveShardCount.DEFAULT,
                         request.timeout(),
-                        shardsAcked -> { finalListener.onResponse(new CreateIndexResponse(true, shardsAcked, indexName)); },
+                        shardsAcked -> {
+                            finalListener.onResponse(new CreateIndexResponse(true, shardsAcked, indexName));
+                        },
                         finalListener::onFailure
                     );
                 } else {
@@ -140,6 +148,11 @@ public final class AutoCreateAction extends ActionType<CreateIndexResponse> {
                     @Override
                     protected ClusterStateUpdateResponse newResponse(boolean acknowledged) {
                         return new ClusterStateUpdateResponse(acknowledged);
+                    }
+
+                    @Override
+                    public ClusterManagerTaskThrottler.ThrottlingKey getClusterManagerThrottlingKey() {
+                        return autoCreateTaskKey;
                     }
 
                     @Override

@@ -31,15 +31,14 @@
 
 package org.opensearch.search.aggregations.metrics;
 
-import org.opensearch.LegacyESVersion;
 import org.opensearch.common.Nullable;
-import org.opensearch.common.ParseField;
 import org.opensearch.common.TriFunction;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.io.stream.StreamOutput;
-import org.opensearch.common.io.stream.Writeable;
-import org.opensearch.common.xcontent.ConstructingObjectParser;
-import org.opensearch.common.xcontent.XContentBuilder;
+import org.opensearch.core.ParseField;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.core.common.io.stream.Writeable;
+import org.opensearch.core.xcontent.ConstructingObjectParser;
+import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.search.aggregations.AggregatorFactories;
 import org.opensearch.search.aggregations.support.ValuesSource;
 import org.opensearch.search.aggregations.support.ValuesSourceAggregationBuilder;
@@ -74,7 +73,7 @@ public abstract class AbstractPercentilesAggregationBuilder<T extends AbstractPe
         ParseField valuesField
     ) {
 
-        /**
+        /*
          * This is a non-ideal ConstructingObjectParser, because it is a compromise between Percentiles and Ranks.
          * Ranks requires an array of values because there is no sane default, and we want to keep that in the ctor.
          * Percentiles has defaults, which means the API allows the user to either use the default or configure
@@ -87,6 +86,7 @@ public abstract class AbstractPercentilesAggregationBuilder<T extends AbstractPe
          * out the behavior from there
          *
          * `args` are provided from the ConstructingObjectParser in-order they are defined in the parser.  So:
+         *
          *  - args[0]: values
          *  - args[1]: tdigest config options
          *  - args[2]: hdr config options
@@ -169,14 +169,7 @@ public abstract class AbstractPercentilesAggregationBuilder<T extends AbstractPe
         super(in);
         values = in.readDoubleArray();
         keyed = in.readBoolean();
-        if (in.getVersion().onOrAfter(LegacyESVersion.V_7_8_0)) {
-            percentilesConfig = (PercentilesConfig) in.readOptionalWriteable((Reader<Writeable>) PercentilesConfig::fromStream);
-        } else {
-            int numberOfSignificantValueDigits = in.readVInt();
-            double compression = in.readDouble();
-            PercentilesMethod method = PercentilesMethod.readFromStream(in);
-            percentilesConfig = PercentilesConfig.fromLegacy(method, compression, numberOfSignificantValueDigits);
-        }
+        percentilesConfig = (PercentilesConfig) in.readOptionalWriteable((Reader<Writeable>) PercentilesConfig::fromStream);
         this.valuesField = valuesField;
     }
 
@@ -184,23 +177,7 @@ public abstract class AbstractPercentilesAggregationBuilder<T extends AbstractPe
     protected void innerWriteTo(StreamOutput out) throws IOException {
         out.writeDoubleArray(values);
         out.writeBoolean(keyed);
-        if (out.getVersion().onOrAfter(LegacyESVersion.V_7_8_0)) {
-            out.writeOptionalWriteable(percentilesConfig);
-        } else {
-            // Legacy method serialized both SigFigs and compression, even though we only need one. So we need
-            // to serialize the default for the unused method
-            int numberOfSignificantValueDigits = percentilesConfig.getMethod().equals(PercentilesMethod.HDR)
-                ? ((PercentilesConfig.Hdr) percentilesConfig).getNumberOfSignificantValueDigits()
-                : PercentilesConfig.Hdr.DEFAULT_NUMBER_SIG_FIGS;
-
-            double compression = percentilesConfig.getMethod().equals(PercentilesMethod.TDIGEST)
-                ? ((PercentilesConfig.TDigest) percentilesConfig).getCompression()
-                : PercentilesConfig.TDigest.DEFAULT_COMPRESSION;
-
-            out.writeVInt(numberOfSignificantValueDigits);
-            out.writeDouble(compression);
-            percentilesConfig.getMethod().writeTo(out);
-        }
+        out.writeOptionalWriteable(percentilesConfig);
     }
 
     /**
@@ -221,7 +198,7 @@ public abstract class AbstractPercentilesAggregationBuilder<T extends AbstractPe
     /**
      * Expert: set the number of significant digits in the values. Only relevant
      * when using {@link PercentilesMethod#HDR}.
-     *
+     * <p>
      * Deprecated: set numberOfSignificantValueDigits by configuring a {@link PercentilesConfig.Hdr} instead
      * and set via {@link PercentilesAggregationBuilder#percentilesConfig(PercentilesConfig)}
      */
@@ -241,7 +218,7 @@ public abstract class AbstractPercentilesAggregationBuilder<T extends AbstractPe
     /**
      * Expert: get the number of significant digits in the values. Only relevant
      * when using {@link PercentilesMethod#HDR}.
-     *
+     * <p>
      * Deprecated: get numberOfSignificantValueDigits by inspecting the {@link PercentilesConfig} returned from
      * {@link PercentilesAggregationBuilder#percentilesConfig()} instead
      */
@@ -256,7 +233,7 @@ public abstract class AbstractPercentilesAggregationBuilder<T extends AbstractPe
     /**
      * Expert: set the compression. Higher values improve accuracy but also
      * memory usage. Only relevant when using {@link PercentilesMethod#TDIGEST}.
-     *
+     * <p>
      * Deprecated: set compression by configuring a {@link PercentilesConfig.TDigest} instead
      * and set via {@link PercentilesAggregationBuilder#percentilesConfig(PercentilesConfig)}
      */
@@ -273,7 +250,7 @@ public abstract class AbstractPercentilesAggregationBuilder<T extends AbstractPe
     /**
      * Expert: get the compression. Higher values improve accuracy but also
      * memory usage. Only relevant when using {@link PercentilesMethod#TDIGEST}.
-     *
+     * <p>
      * Deprecated: get compression by inspecting the {@link PercentilesConfig} returned from
      * {@link PercentilesAggregationBuilder#percentilesConfig()} instead
      */
@@ -341,15 +318,15 @@ public abstract class AbstractPercentilesAggregationBuilder<T extends AbstractPe
 
     /**
      * Return the current algo configuration, or a default (Tdigest) otherwise
-     *
+     * <p>
      * This is needed because builders don't have a "build" or "finalize" method, but
      * the old API did bake in defaults.  Certain operations like xcontent, equals, hashcode
      * will use the values in the builder at any time and need to be aware of defaults.
-     *
+     * <p>
      * But to maintain BWC behavior as much as possible, we allow the user to set
      * algo settings independent of method.  To keep life simple we use a null to track
      * if any method has been selected yet.
-     *
+     * <p>
      * However, this means we need a way to fetch the default if the user hasn't
      * selected any method and uses a builder-side feature like xcontent
      */

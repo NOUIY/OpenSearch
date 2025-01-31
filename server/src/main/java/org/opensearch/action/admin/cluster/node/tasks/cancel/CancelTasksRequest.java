@@ -32,10 +32,10 @@
 
 package org.opensearch.action.admin.cluster.node.tasks.cancel;
 
-import org.opensearch.LegacyESVersion;
 import org.opensearch.action.support.tasks.BaseTasksRequest;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.io.stream.StreamOutput;
+import org.opensearch.common.annotation.PublicApi;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.tasks.CancellableTask;
 import org.opensearch.tasks.Task;
 
@@ -45,8 +45,9 @@ import java.util.Arrays;
 /**
  * A request to cancel tasks
  *
- * @opensearch.internal
+ * @opensearch.api
  */
+@PublicApi(since = "1.0.0")
 public class CancelTasksRequest extends BaseTasksRequest<CancelTasksRequest> {
 
     public static final String DEFAULT_REASON = "by user request";
@@ -60,18 +61,14 @@ public class CancelTasksRequest extends BaseTasksRequest<CancelTasksRequest> {
     public CancelTasksRequest(StreamInput in) throws IOException {
         super(in);
         this.reason = in.readString();
-        if (in.getVersion().onOrAfter(LegacyESVersion.V_7_8_0)) {
-            waitForCompletion = in.readBoolean();
-        }
+        waitForCompletion = in.readBoolean();
     }
 
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         super.writeTo(out);
         out.writeString(reason);
-        if (out.getVersion().onOrAfter(LegacyESVersion.V_7_8_0)) {
-            out.writeBoolean(waitForCompletion);
-        }
+        out.writeBoolean(waitForCompletion);
     }
 
     @Override

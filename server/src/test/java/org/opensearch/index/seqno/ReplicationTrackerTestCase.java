@@ -38,12 +38,15 @@ import org.opensearch.cluster.routing.ShardRouting;
 import org.opensearch.cluster.routing.ShardRoutingState;
 import org.opensearch.cluster.routing.TestShardRouting;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.index.engine.SafeCommitInfo;
-import org.opensearch.index.shard.ShardId;
-import org.opensearch.test.OpenSearchTestCase;
+import org.opensearch.index.remote.RemoteStoreTestsHelper;
 import org.opensearch.test.IndexSettingsModule;
+import org.opensearch.test.OpenSearchTestCase;
 
+import java.util.Collections;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.LongConsumer;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
@@ -55,28 +58,60 @@ public abstract class ReplicationTrackerTestCase extends OpenSearchTestCase {
     ReplicationTracker newTracker(
         final AllocationId allocationId,
         final LongConsumer updatedGlobalCheckpoint,
-        final LongSupplier currentTimeMillisSupplier
+        final LongSupplier currentTimeMillisSupplier,
+        final Settings settings,
+        final boolean remote
     ) {
         return new ReplicationTracker(
             new ShardId("test", "_na_", 0),
             allocationId.getId(),
-            IndexSettingsModule.newIndexSettings("test", Settings.EMPTY),
+            remote ? RemoteStoreTestsHelper.createIndexSettings(true, settings) : IndexSettingsModule.newIndexSettings("test", settings),
             randomNonNegativeLong(),
             UNASSIGNED_SEQ_NO,
             updatedGlobalCheckpoint,
             currentTimeMillisSupplier,
             (leases, listener) -> {},
-            OPS_BASED_RECOVERY_ALWAYS_REASONABLE
+            OPS_BASED_RECOVERY_ALWAYS_REASONABLE,
+            remote ? REMOTE_DISCOVERY_NODE : NON_REMOTE_DISCOVERY_NODE
         );
     }
 
+    ReplicationTracker newTracker(
+        final AllocationId allocationId,
+        final LongConsumer updatedGlobalCheckpoint,
+        final LongSupplier currentTimeMillisSupplier
+    ) {
+        return newTracker(allocationId, updatedGlobalCheckpoint, currentTimeMillisSupplier, Settings.EMPTY);
+    }
+
+    ReplicationTracker newTracker(
+        final AllocationId allocationId,
+        final LongConsumer updatedGlobalCheckpoint,
+        final LongSupplier currentTimeMillisSupplier,
+        final Settings settings
+    ) {
+        return newTracker(allocationId, updatedGlobalCheckpoint, currentTimeMillisSupplier, settings, false);
+    }
+
     static final Supplier<SafeCommitInfo> OPS_BASED_RECOVERY_ALWAYS_REASONABLE = () -> SafeCommitInfo.EMPTY;
+
+    static final Function<String, Boolean> NON_REMOTE_DISCOVERY_NODE = shardId -> false;
+
+    static final Function<String, Boolean> REMOTE_DISCOVERY_NODE = shardId -> true;
 
     static String nodeIdFromAllocationId(final AllocationId allocationId) {
         return "n-" + allocationId.getId().substring(0, 8);
     }
 
     static IndexShardRoutingTable routingTable(final Set<AllocationId> initializingIds, final AllocationId primaryId) {
+        return routingTable(initializingIds, Collections.singleton(primaryId), primaryId);
+    }
+
+    static IndexShardRoutingTable routingTable(
+        final Set<AllocationId> initializingIds,
+        final Set<AllocationId> activeIds,
+        final AllocationId primaryId
+    ) {
         final ShardId shardId = new ShardId("test", "_na_", 0);
         final ShardRouting primaryShard = TestShardRouting.newShardRouting(
             shardId,
@@ -86,11 +121,17 @@ public abstract class ReplicationTrackerTestCase extends OpenSearchTestCase {
             ShardRoutingState.STARTED,
             primaryId
         );
-        return routingTable(initializingIds, primaryShard);
+        return routingTable(initializingIds, activeIds, primaryShard);
     }
 
-    static IndexShardRoutingTable routingTable(final Set<AllocationId> initializingIds, final ShardRouting primaryShard) {
+    static IndexShardRoutingTable routingTable(
+        final Set<AllocationId> initializingIds,
+        final Set<AllocationId> activeIds,
+        final ShardRouting primaryShard
+    ) {
+        assert initializingIds != null && activeIds != null;
         assert !initializingIds.contains(primaryShard.allocationId());
+        assert activeIds.contains(primaryShard.allocationId());
         final ShardId shardId = new ShardId("test", "_na_", 0);
         final IndexShardRoutingTable.Builder builder = new IndexShardRoutingTable.Builder(shardId);
         for (final AllocationId initializingId : initializingIds) {
@@ -102,6 +143,21 @@ public abstract class ReplicationTrackerTestCase extends OpenSearchTestCase {
                     false,
                     ShardRoutingState.INITIALIZING,
                     initializingId
+                )
+            );
+        }
+        for (final AllocationId activeId : activeIds) {
+            if (activeId.equals(primaryShard.allocationId())) {
+                continue;
+            }
+            builder.addShard(
+                TestShardRouting.newShardRouting(
+                    shardId,
+                    nodeIdFromAllocationId(activeId),
+                    null,
+                    false,
+                    ShardRoutingState.STARTED,
+                    activeId
                 )
             );
         }

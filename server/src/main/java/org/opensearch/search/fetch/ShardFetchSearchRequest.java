@@ -32,20 +32,19 @@
 
 package org.opensearch.search.fetch;
 
-import com.carrotsearch.hppc.IntArrayList;
 import org.apache.lucene.search.ScoreDoc;
-import org.opensearch.LegacyESVersion;
 import org.opensearch.action.IndicesRequest;
 import org.opensearch.action.OriginalIndices;
 import org.opensearch.action.support.IndicesOptions;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.io.stream.StreamOutput;
-import org.opensearch.search.internal.ShardSearchContextId;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.search.RescoreDocIds;
 import org.opensearch.search.dfs.AggregatedDfs;
+import org.opensearch.search.internal.ShardSearchContextId;
 import org.opensearch.search.internal.ShardSearchRequest;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
  * Shard level fetch request used with search. Holds indices taken from the original search request
@@ -64,7 +63,7 @@ public class ShardFetchSearchRequest extends ShardFetchRequest implements Indice
         OriginalIndices originalIndices,
         ShardSearchContextId id,
         ShardSearchRequest shardSearchRequest,
-        IntArrayList list,
+        List<Integer> list,
         ScoreDoc lastEmittedDoc,
         RescoreDocIds rescoreDocIds,
         AggregatedDfs aggregatedDfs
@@ -79,26 +78,18 @@ public class ShardFetchSearchRequest extends ShardFetchRequest implements Indice
     public ShardFetchSearchRequest(StreamInput in) throws IOException {
         super(in);
         originalIndices = OriginalIndices.readOriginalIndices(in);
-        if (in.getVersion().onOrAfter(LegacyESVersion.V_7_10_0)) {
-            shardSearchRequest = in.readOptionalWriteable(ShardSearchRequest::new);
-            rescoreDocIds = new RescoreDocIds(in);
-            aggregatedDfs = in.readOptionalWriteable(AggregatedDfs::new);
-        } else {
-            shardSearchRequest = null;
-            rescoreDocIds = RescoreDocIds.EMPTY;
-            aggregatedDfs = null;
-        }
+        shardSearchRequest = in.readOptionalWriteable(ShardSearchRequest::new);
+        rescoreDocIds = new RescoreDocIds(in);
+        aggregatedDfs = in.readOptionalWriteable(AggregatedDfs::new);
     }
 
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         super.writeTo(out);
         OriginalIndices.writeOriginalIndices(originalIndices, out);
-        if (out.getVersion().onOrAfter(LegacyESVersion.V_7_10_0)) {
-            out.writeOptionalWriteable(shardSearchRequest);
-            rescoreDocIds.writeTo(out);
-            out.writeOptionalWriteable(aggregatedDfs);
-        }
+        out.writeOptionalWriteable(shardSearchRequest);
+        rescoreDocIds.writeTo(out);
+        out.writeOptionalWriteable(aggregatedDfs);
     }
 
     @Override

@@ -32,15 +32,19 @@
 
 package org.opensearch.transport;
 
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
 import org.opensearch.Version;
-import org.opensearch.action.ActionListener;
 import org.opensearch.action.support.PlainActionFuture;
 import org.opensearch.cluster.node.DiscoveryNode;
-import org.opensearch.common.io.stream.NamedWriteableRegistry;
 import org.opensearch.common.network.NetworkService;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.PageCacheRecycler;
-import org.opensearch.indices.breaker.NoneCircuitBreakerService;
+import org.opensearch.core.action.ActionListener;
+import org.opensearch.core.common.io.stream.NamedWriteableRegistry;
+import org.opensearch.core.indices.breaker.NoneCircuitBreakerService;
+import org.opensearch.telemetry.tracing.noop.NoopTracer;
+import org.opensearch.test.MockLogAppender;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.test.VersionUtils;
 import org.opensearch.test.transport.MockTransportService;
@@ -81,7 +85,8 @@ public class TransportServiceHandshakeTests extends OpenSearchTestCase {
             new NetworkService(Collections.emptyList()),
             PageCacheRecycler.NON_RECYCLING_INSTANCE,
             new NamedWriteableRegistry(Collections.emptyList()),
-            new NoneCircuitBreakerService()
+            new NoneCircuitBreakerService(),
+            NoopTracer.INSTANCE
         );
         TransportService transportService = new MockTransportService(
             settings,
@@ -97,7 +102,8 @@ public class TransportServiceHandshakeTests extends OpenSearchTestCase {
                 version
             ),
             null,
-            Collections.emptySet()
+            Collections.emptySet(),
+            NoopTracer.INSTANCE
         );
         transportService.start();
         transportService.acceptIncomingRequests();
@@ -215,12 +221,41 @@ public class TransportServiceHandshakeTests extends OpenSearchTestCase {
             emptySet(),
             handleB.discoveryNode.getVersion()
         );
-        ConnectTransportException ex = expectThrows(
-            ConnectTransportException.class,
-            () -> { handleA.transportService.connectToNode(discoveryNode, TestProfiles.LIGHT_PROFILE); }
-        );
+        ConnectTransportException ex = expectThrows(ConnectTransportException.class, () -> {
+            handleA.transportService.connectToNode(discoveryNode, TestProfiles.LIGHT_PROFILE);
+        });
         assertThat(ex.getMessage(), containsString("unexpected remote node"));
         assertFalse(handleA.transportService.nodeConnected(discoveryNode));
+    }
+
+    public void testNodeConnectWithDifferentNodeIDSkipValidation() throws IllegalAccessException {
+        Settings settings = Settings.builder().put("cluster.name", "test").build();
+        NetworkHandle handleA = startServices("TS_A", settings, Version.CURRENT);
+        NetworkHandle handleB = startServices("TS_B", settings, Version.CURRENT);
+        DiscoveryNode discoveryNode = new DiscoveryNode(
+            randomAlphaOfLength(10),
+            handleB.discoveryNode.getAddress(),
+            emptyMap(),
+            emptySet(),
+            handleB.discoveryNode.getVersion()
+        );
+        try (MockLogAppender mockLogAppender = MockLogAppender.createForLoggers(LogManager.getLogger(TransportService.class))) {
+
+            mockLogAppender.addExpectation(
+                new MockLogAppender.SeenEventExpectation(
+                    "Validation Skipped",
+                    "org.opensearch.transport.TransportService",
+                    Level.INFO,
+                    "Connection validation was skipped"
+                )
+            );
+
+            handleA.transportService.connectToExtensionNode(discoveryNode, TestProfiles.LIGHT_PROFILE);
+
+            mockLogAppender.assertAllExpectationsMatched();
+
+            assertTrue(handleA.transportService.nodeConnected(discoveryNode));
+        }
     }
 
     private static class NetworkHandle {

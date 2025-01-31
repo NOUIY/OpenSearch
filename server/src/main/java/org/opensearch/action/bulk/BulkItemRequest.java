@@ -36,11 +36,12 @@ import org.apache.lucene.util.Accountable;
 import org.apache.lucene.util.RamUsageEstimator;
 import org.opensearch.action.DocWriteRequest;
 import org.opensearch.common.Nullable;
-import org.opensearch.common.Strings;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.io.stream.StreamOutput;
-import org.opensearch.common.io.stream.Writeable;
-import org.opensearch.index.shard.ShardId;
+import org.opensearch.core.common.Strings;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.core.common.io.stream.Writeable;
+import org.opensearch.core.index.shard.ShardId;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
 
 import java.io.IOException;
 import java.util.Objects;
@@ -59,8 +60,7 @@ public class BulkItemRequest implements Writeable, Accountable {
     private volatile BulkItemResponse primaryResponse;
 
     /**
-     * @param shardId {@code null} if reading from a stream before {@link BulkShardRequest#COMPACT_SHARD_ID_VERSION} to force BwC read
-     *                            that includes shard id
+     * @param shardId the shard id
      */
     BulkItemRequest(@Nullable ShardId shardId, StreamInput in) throws IOException {
         id = in.readVInt();
@@ -114,7 +114,7 @@ public class BulkItemRequest implements Writeable, Accountable {
             setPrimaryResponse(new BulkItemResponse(id, request.opType(), failure));
         } else {
             assert primaryResponse.isFailed() && primaryResponse.getFailure().isAborted() : "response ["
-                + Strings.toString(primaryResponse)
+                + Strings.toString(MediaTypeRegistry.JSON, primaryResponse)
                 + "]; cause ["
                 + cause
                 + "]";

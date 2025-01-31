@@ -36,6 +36,7 @@ import org.apache.lucene.codecs.DocValuesProducer;
 import org.apache.lucene.codecs.StoredFieldsReader;
 import org.apache.lucene.index.BinaryDocValues;
 import org.apache.lucene.index.CodecReader;
+import org.apache.lucene.index.DocValuesSkipper;
 import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.FilterCodecReader;
 import org.apache.lucene.index.FilterNumericDocValues;
@@ -217,6 +218,11 @@ final class RecoverySourcePruneMergePolicy extends OneMergeWrappingMergePolicy {
             public void close() throws IOException {
                 in.close();
             }
+
+            @Override
+            public DocValuesSkipper getSkipper(FieldInfo field) throws IOException {
+                return in.getSkipper(field);
+            }
         }
 
         /**
@@ -238,8 +244,8 @@ final class RecoverySourcePruneMergePolicy extends OneMergeWrappingMergePolicy {
             }
 
             @Override
-            public void visitDocument(int docID, StoredFieldVisitor visitor) throws IOException {
-                in.visitDocument(docID, visitor);
+            public void document(int docID, StoredFieldVisitor visitor) throws IOException {
+                in.document(docID, visitor);
             }
 
             @Override
@@ -268,11 +274,11 @@ final class RecoverySourcePruneMergePolicy extends OneMergeWrappingMergePolicy {
             }
 
             @Override
-            public void visitDocument(int docID, StoredFieldVisitor visitor) throws IOException {
+            public void document(int docID, StoredFieldVisitor visitor) throws IOException {
                 if (recoverySourceToKeep != null && recoverySourceToKeep.get(docID)) {
-                    super.visitDocument(docID, visitor);
+                    super.document(docID, visitor);
                 } else {
-                    super.visitDocument(docID, new FilterStoredFieldVisitor(visitor) {
+                    super.document(docID, new FilterStoredFieldVisitor(visitor) {
                         @Override
                         public Status needsField(FieldInfo fieldInfo) throws IOException {
                             if (recoverySourceField.equals(fieldInfo.name)) {
@@ -293,7 +299,6 @@ final class RecoverySourcePruneMergePolicy extends OneMergeWrappingMergePolicy {
             public StoredFieldsReader clone() {
                 return new RecoverySourcePruningStoredFieldsReader(in.clone(), recoverySourceToKeep, recoverySourceField);
             }
-
         }
 
         /**

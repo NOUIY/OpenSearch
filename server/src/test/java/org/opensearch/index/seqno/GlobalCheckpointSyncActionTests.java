@@ -34,16 +34,18 @@ package org.opensearch.index.seqno;
 
 import org.opensearch.action.support.ActionFilters;
 import org.opensearch.action.support.ActionTestUtils;
+import org.opensearch.action.support.replication.ReplicationMode;
 import org.opensearch.cluster.action.shard.ShardStateAction;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.Settings;
-import org.opensearch.core.internal.io.IOUtils;
-import org.opensearch.index.Index;
+import org.opensearch.common.util.io.IOUtils;
+import org.opensearch.core.index.Index;
+import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.index.IndexService;
 import org.opensearch.index.shard.IndexShard;
-import org.opensearch.index.shard.ShardId;
 import org.opensearch.index.translog.Translog;
 import org.opensearch.indices.IndicesService;
+import org.opensearch.telemetry.tracing.noop.NoopTracer;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.test.transport.CapturingTransport;
 import org.opensearch.threadpool.TestThreadPool;
@@ -52,6 +54,7 @@ import org.opensearch.transport.TransportService;
 
 import java.util.Collections;
 
+import static org.opensearch.index.remote.RemoteStoreTestsHelper.createIndexSettings;
 import static org.opensearch.test.ClusterServiceUtils.createClusterService;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -77,7 +80,8 @@ public class GlobalCheckpointSyncActionTests extends OpenSearchTestCase {
             TransportService.NOOP_TRANSPORT_INTERCEPTOR,
             boundAddress -> clusterService.localNode(),
             null,
-            Collections.emptySet()
+            Collections.emptySet(),
+            NoopTracer.INSTANCE
         );
         transportService.start();
         transportService.acceptIncomingRequests();
@@ -107,6 +111,7 @@ public class GlobalCheckpointSyncActionTests extends OpenSearchTestCase {
         final ShardId shardId = new ShardId(index, id);
         when(indexShard.shardId()).thenReturn(shardId);
 
+        when(indexShard.indexSettings()).thenReturn(createIndexSettings(false));
         final Translog.Durability durability = randomFrom(Translog.Durability.ASYNC, Translog.Durability.REQUEST);
         when(indexShard.getTranslogDurability()).thenReturn(durability);
 
@@ -150,6 +155,63 @@ public class GlobalCheckpointSyncActionTests extends OpenSearchTestCase {
         } else {
             verify(indexShard).sync();
         }
+    }
+
+    public void testGetReplicationModeWithRemoteTranslog() {
+        final GlobalCheckpointSyncAction action = createAction();
+        final IndexShard indexShard = mock(IndexShard.class);
+        when(indexShard.indexSettings()).thenReturn(createIndexSettings(true));
+        assertEquals(ReplicationMode.NO_REPLICATION, action.getReplicationMode(indexShard));
+    }
+
+    public void testGetReplicationModeWithLocalTranslog() {
+        final GlobalCheckpointSyncAction action = createAction();
+        final IndexShard indexShard = mock(IndexShard.class);
+        when(indexShard.indexSettings()).thenReturn(createIndexSettings(false));
+        assertEquals(ReplicationMode.FULL_REPLICATION, action.getReplicationMode(indexShard));
+    }
+
+    private GlobalCheckpointSyncAction createAction() {
+        final IndicesService indicesService = mock(IndicesService.class);
+        return new GlobalCheckpointSyncAction(
+            Settings.EMPTY,
+            transportService,
+            clusterService,
+            indicesService,
+            threadPool,
+            shardStateAction,
+            new ActionFilters(Collections.emptySet())
+        );
+    }
+
+    public void testMayBeSyncTranslogWithRemoteTranslog() throws Exception {
+        final GlobalCheckpointSyncAction action = createAction();
+        final IndexShard indexShard = mock(IndexShard.class);
+        when(indexShard.isRemoteTranslogEnabled()).thenReturn(true);
+        final GlobalCheckpointSyncAction.Request primaryRequest = new GlobalCheckpointSyncAction.Request(indexShard.shardId());
+        final long globalCheckpoint = randomIntBetween(Math.toIntExact(SequenceNumbers.NO_OPS_PERFORMED), Integer.MAX_VALUE);
+        when(indexShard.getLastKnownGlobalCheckpoint()).thenReturn(globalCheckpoint);
+        when(indexShard.getLastSyncedGlobalCheckpoint()).thenReturn(globalCheckpoint - 1);
+        when(indexShard.getTranslogDurability()).thenReturn(Translog.Durability.REQUEST);
+        when(indexShard.indexSettings()).thenReturn(createIndexSettings(true));
+
+        action.shardOperationOnPrimary(primaryRequest, indexShard, ActionTestUtils.assertNoFailureListener(r -> {}));
+        verify(indexShard, never()).sync();
+    }
+
+    public void testMayBeSyncTranslogWithLocalTranslog() throws Exception {
+        final GlobalCheckpointSyncAction action = createAction();
+        final IndexShard indexShard = mock(IndexShard.class);
+        when(indexShard.isRemoteTranslogEnabled()).thenReturn(false);
+        final GlobalCheckpointSyncAction.Request primaryRequest = new GlobalCheckpointSyncAction.Request(indexShard.shardId());
+        final long globalCheckpoint = randomIntBetween(Math.toIntExact(SequenceNumbers.NO_OPS_PERFORMED), Integer.MAX_VALUE);
+        when(indexShard.getLastKnownGlobalCheckpoint()).thenReturn(globalCheckpoint);
+        when(indexShard.getLastSyncedGlobalCheckpoint()).thenReturn(globalCheckpoint - 1);
+        when(indexShard.getTranslogDurability()).thenReturn(Translog.Durability.REQUEST);
+        when(indexShard.indexSettings()).thenReturn(createIndexSettings(false));
+
+        action.shardOperationOnPrimary(primaryRequest, indexShard, ActionTestUtils.assertNoFailureListener(r -> {}));
+        verify(indexShard).sync();
     }
 
 }

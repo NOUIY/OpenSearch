@@ -32,7 +32,6 @@
 
 package org.opensearch.upgrades;
 
-import org.opensearch.LegacyESVersion;
 import org.opensearch.Version;
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;
@@ -42,11 +41,13 @@ import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.cluster.metadata.MetadataIndexStateService;
 import org.opensearch.common.Booleans;
 import org.opensearch.common.CheckedFunction;
-import org.opensearch.common.Strings;
 import org.opensearch.common.settings.Settings;
-import org.opensearch.common.xcontent.XContentBuilder;
+import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.common.xcontent.support.XContentMapValues;
+import org.opensearch.core.common.Strings;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
+import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.index.IndexSettings;
 import org.opensearch.test.NotEqualMessageBuilder;
 import org.opensearch.test.XContentTestUtils;
@@ -72,7 +73,6 @@ import java.util.regex.Pattern;
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.singletonList;
 import static java.util.Collections.singletonMap;
-import static org.opensearch.cluster.metadata.IndexNameExpressionResolver.SYSTEM_INDEX_ENFORCEMENT_VERSION;
 import static org.opensearch.cluster.routing.UnassignedInfo.INDEX_DELAYED_NODE_LEFT_TIMEOUT_SETTING;
 import static org.opensearch.cluster.routing.allocation.decider.MaxRetryAllocationDecider.SETTING_ALLOCATION_MAX_RETRY;
 import static org.opensearch.common.xcontent.XContentFactory.jsonBuilder;
@@ -150,7 +150,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
             mappingsAndSettings.endObject();
 
             Request createIndex = new Request("PUT", "/" + index);
-            createIndex.setJsonEntity(Strings.toString(mappingsAndSettings));
+            createIndex.setJsonEntity(mappingsAndSettings.toString());
             createIndex.setOptions(allowTypesRemovalWarnings());
             client().performRequest(createIndex);
 
@@ -209,7 +209,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
             mappingsAndSettings.endObject();
 
             Request createIndex = new Request("PUT", "/" + index);
-            createIndex.setJsonEntity(Strings.toString(mappingsAndSettings));
+            createIndex.setJsonEntity(mappingsAndSettings.toString());
             client().performRequest(createIndex);
 
             int numDocs = randomIntBetween(2000, 3000);
@@ -258,7 +258,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
             }
             mappingsAndSettings.endObject();
             Request createTemplate = new Request("PUT", "/_template/template_1");
-            createTemplate.setJsonEntity(Strings.toString(mappingsAndSettings));
+            createTemplate.setJsonEntity(mappingsAndSettings.toString());
             client().performRequest(createTemplate);
             client().performRequest(new Request("PUT", "/" + index));
         }
@@ -316,7 +316,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
             mappingsAndSettings.endObject();
 
             Request createIndex = new Request("PUT", "/" + index);
-            createIndex.setJsonEntity(Strings.toString(mappingsAndSettings));
+            createIndex.setJsonEntity(mappingsAndSettings.toString());
             client().performRequest(createIndex);
 
             numDocs = randomIntBetween(512, 1024);
@@ -385,7 +385,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
             mappingsAndSettings.endObject();
 
             Request createIndex = new Request("PUT", "/" + index);
-            createIndex.setJsonEntity(Strings.toString(mappingsAndSettings));
+            createIndex.setJsonEntity(mappingsAndSettings.toString());
             client().performRequest(createIndex);
 
             numDocs = randomIntBetween(512, 1024);
@@ -855,7 +855,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
         }
         templateBuilder.endObject().endObject();
         Request createTemplateRequest = new Request("PUT", "/_template/test_template");
-        createTemplateRequest.setJsonEntity(Strings.toString(templateBuilder));
+        createTemplateRequest.setJsonEntity(templateBuilder.toString());
 
         client().performRequest(createTemplateRequest);
 
@@ -871,7 +871,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
             }
             repoConfig.endObject();
             Request createRepoRequest = new Request("PUT", "/_snapshot/repo");
-            createRepoRequest.setJsonEntity(Strings.toString(repoConfig));
+            createRepoRequest.setJsonEntity(repoConfig.toString());
             client().performRequest(createRepoRequest);
         }
 
@@ -898,7 +898,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
             }
             mappingsAndSettings.endObject();
             Request createIndex = new Request("PUT", "/" + index);
-            createIndex.setJsonEntity(Strings.toString(mappingsAndSettings));
+            createIndex.setJsonEntity(mappingsAndSettings.toString());
             client().performRequest(createIndex);
         } else {
             ensureGreenLongWait(index);
@@ -941,11 +941,11 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
             }
             mappingsAndSettings.endObject();
             Request createIndex = new Request("PUT", "/" + index);
-            createIndex.setJsonEntity(Strings.toString(mappingsAndSettings));
+            createIndex.setJsonEntity(mappingsAndSettings.toString());
             client().performRequest(createIndex);
             int numDocs = between(10, 100);
             for (int i = 0; i < numDocs; i++) {
-                String doc = Strings.toString(JsonXContent.contentBuilder().startObject().field("field", "v1").endObject());
+                String doc = JsonXContent.contentBuilder().startObject().field("field", "v1").endObject().toString();
                 Request request = new Request("POST", "/" + index + "/_doc/" + i);
                 request.setJsonEntity(doc);
                 client().performRequest(request);
@@ -956,7 +956,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
             assertTotalHits(liveDocs, entityAsMap(client().performRequest(new Request("GET", "/" + index + "/_search"))));
             for (int i = 0; i < numDocs; i++) {
                 if (randomBoolean()) {
-                    String doc = Strings.toString(JsonXContent.contentBuilder().startObject().field("field", "v2").endObject());
+                    String doc = JsonXContent.contentBuilder().startObject().field("field", "v2").endObject().toString();
                     Request request = new Request("POST", "/" + index + "/_doc/" + i);
                     request.setJsonEntity(doc);
                     client().performRequest(request);
@@ -990,7 +990,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
                 numDocs = between(1, 100);
                 for (int i = 0; i < numDocs; i++) {
                     final Request request = new Request("POST", "/" + index + "/" + type + "/" + i);
-                    request.setJsonEntity(Strings.toString(JsonXContent.contentBuilder().startObject().field("field", "v1").endObject()));
+                    request.setJsonEntity(JsonXContent.contentBuilder().startObject().field("field", "v1").endObject().toString());
                     assertOK(client().performRequest(request));
                     if (rarely()) {
                         refresh();
@@ -1084,7 +1084,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
         restoreCommand.endObject();
         Request restoreRequest = new Request("POST", "/_snapshot/repo/" + snapshotName + "/_restore");
         restoreRequest.addParameter("wait_for_completion", "true");
-        restoreRequest.setJsonEntity(Strings.toString(restoreCommand));
+        restoreRequest.setJsonEntity(restoreCommand.toString());
         client().performRequest(restoreRequest);
 
         // Make sure search finds all documents
@@ -1159,7 +1159,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
         for (int i = 0; i < count; i++) {
             logger.debug("Indexing document [{}]", i);
             Request createDocument = new Request("POST", "/" + index + "/_doc/" + (specifyId ? i : ""));
-            createDocument.setJsonEntity(Strings.toString(docSupplier.apply(i)));
+            createDocument.setJsonEntity(docSupplier.apply(i).toString());
             client().performRequest(createDocument);
             if (rarely()) {
                 refreshAllIndices();
@@ -1176,7 +1176,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
 
     private void indexDocument(String id) throws IOException {
         final Request indexRequest = new Request("POST", "/" + index + "/" + type + "/" + id);
-        indexRequest.setJsonEntity(Strings.toString(JsonXContent.contentBuilder().startObject().field("f", "v").endObject()));
+        indexRequest.setJsonEntity(JsonXContent.contentBuilder().startObject().field("f", "v").endObject().toString());
         assertOK(client().performRequest(indexRequest));
     }
 
@@ -1191,7 +1191,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
         // Only create the first version so we know how many documents are created when the index is first created
         Request request = new Request("PUT", "/info/" + type + "/" + id);
         request.addParameter("op_type", "create");
-        request.setJsonEntity(Strings.toString(infoDoc));
+        request.setJsonEntity(infoDoc.toString());
         client().performRequest(request);
     }
 
@@ -1256,7 +1256,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
             settings.endObject();
 
             Request createIndex = new Request("PUT", "/" + index);
-            createIndex.setJsonEntity(Strings.toString(settings));
+            createIndex.setJsonEntity(settings.toString());
             client().performRequest(createIndex);
         }
         ensureGreen(index);
@@ -1366,7 +1366,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
                 if (randomBoolean()) {
                     settings.put(IndexSettings.INDEX_SOFT_DELETES_SETTING.getKey(), true);
                 }
-                shrinkRequest.setJsonEntity("{\"settings\":" + Strings.toString(settings.build()) + "}");
+                shrinkRequest.setJsonEntity("{\"settings\":" + Strings.toString(MediaTypeRegistry.JSON, settings.build()) + "}");
                 client().performRequest(shrinkRequest);
                 ensureGreenLongWait(target);
                 assertNumHits(target, numDocs + moreDocs, 1);
@@ -1378,7 +1378,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
                     settings.put(IndexSettings.INDEX_SOFT_DELETES_SETTING.getKey(), true);
                 }
                 Request splitRequest = new Request("PUT", "/" + index + "/_split/" + target);
-                splitRequest.setJsonEntity("{\"settings\":" + Strings.toString(settings.build()) + "}");
+                splitRequest.setJsonEntity("{\"settings\":" + Strings.toString(MediaTypeRegistry.JSON, settings.build()) + "}");
                 client().performRequest(splitRequest);
                 ensureGreenLongWait(target);
                 assertNumHits(target, numDocs + moreDocs, 6);
@@ -1441,20 +1441,6 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
                     throw new AssertionError(".tasks index does not exist yet");
                 }
             });
-
-            // If we are on 7.x create an alias that includes both a system index and a non-system index so we can be sure it gets
-            // upgraded properly. If we're already on 8.x, skip this part of the test.
-            if (minimumNodeVersion().before(SYSTEM_INDEX_ENFORCEMENT_VERSION)) {
-                // Create an alias to make sure it gets upgraded properly
-                Request putAliasRequest = new Request("POST", "/_aliases");
-                putAliasRequest.setJsonEntity("{\n" +
-                    "  \"actions\": [\n" +
-                    "    {\"add\":  {\"index\":  \".tasks\", \"alias\": \"test-system-alias\"}},\n" +
-                    "    {\"add\":  {\"index\":  \"test_index_reindex\", \"alias\": \"test-system-alias\"}}\n" +
-                    "  ]\n" +
-                    "}");
-                assertThat(client().performRequest(putAliasRequest).getStatusLine().getStatusCode(), is(200));
-            }
         } else {
             assertBusy(() -> {
                 Request clusterStateRequest = new Request("GET", "/_cluster/state/metadata");
@@ -1469,21 +1455,8 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
                 XContentTestUtils.JsonMapView tasksIndex = new XContentTestUtils.JsonMapView((Map<String, Object>) indices.get(".tasks"));
                 assertThat(tasksIndex.get("system"), is(true));
 
-                // If .tasks was created in a 7.x version, it should have an alias on it that we need to make sure got upgraded properly.
                 final String tasksCreatedVersionString = tasksIndex.get("settings.index.version.created");
                 assertThat(tasksCreatedVersionString, notNullValue());
-                final Version tasksCreatedVersion = Version.fromId(Integer.parseInt(tasksCreatedVersionString));
-                if (tasksCreatedVersion.before(SYSTEM_INDEX_ENFORCEMENT_VERSION)) {
-                    // Verify that the alias survived the upgrade
-                    Request getAliasRequest = new Request("GET", "/_alias/test-system-alias");
-                    getAliasRequest.setOptions(expectVersionSpecificWarnings(v -> {
-                        v.current(systemIndexWarning);
-                        v.compatible(systemIndexWarning);
-                    }));
-                    Map<String, Object> aliasResponse = entityAsMap(client().performRequest(getAliasRequest));
-                    assertThat(aliasResponse, hasKey(".tasks"));
-                    assertThat(aliasResponse, hasKey("test_index_reindex"));
-                }
             });
         }
     }
@@ -1513,7 +1486,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
             }
             repoConfig.endObject();
             Request createRepoRequest = new Request("PUT", "/_snapshot/repo");
-            createRepoRequest.setJsonEntity(Strings.toString(repoConfig));
+            createRepoRequest.setJsonEntity(repoConfig.toString());
             client().performRequest(createRepoRequest);
             // create snapshot
             Request createSnapshot = new Request("PUT", "/_snapshot/repo/" + snapshot);
@@ -1535,7 +1508,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
             restoreCommand.endObject();
             Request restoreRequest = new Request("POST", "/_snapshot/repo/" + snapshot + "/_restore");
             restoreRequest.addParameter("wait_for_completion", "true");
-            restoreRequest.setJsonEntity(Strings.toString(restoreCommand));
+            restoreRequest.setJsonEntity(restoreCommand.toString());
             client().performRequest(restoreRequest);
             ensureGreen(restoredIndex);
             int numDocs = countOfIndexedRandomDocuments();
@@ -1567,7 +1540,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
             }
             repoConfig.endObject();
             Request createRepoRequest = new Request("PUT", "/_snapshot/repo");
-            createRepoRequest.setJsonEntity(Strings.toString(repoConfig));
+            createRepoRequest.setJsonEntity(repoConfig.toString());
             client().performRequest(createRepoRequest);
             // create snapshot
             Request createSnapshot = new Request("PUT", "/_snapshot/repo/" + snapshot);
@@ -1588,7 +1561,7 @@ public class FullClusterRestartIT extends AbstractFullClusterRestartTestCase {
             restoreCommand.endObject();
             Request restoreRequest = new Request("POST", "/_snapshot/repo/" + snapshot + "/_restore");
             restoreRequest.addParameter("wait_for_completion", "true");
-            restoreRequest.setJsonEntity(Strings.toString(restoreCommand));
+            restoreRequest.setJsonEntity(restoreCommand.toString());
             final ResponseException error = expectThrows(ResponseException.class, () -> client().performRequest(restoreRequest));
             assertThat(error.getMessage(), containsString("cannot disable setting [index.soft_deletes.enabled] on restore"));
         }

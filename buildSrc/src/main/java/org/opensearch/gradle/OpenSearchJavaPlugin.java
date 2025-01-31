@@ -34,6 +34,7 @@ package org.opensearch.gradle;
 
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar;
 import nebula.plugin.info.InfoBrokerPlugin;
+
 import org.opensearch.gradle.info.BuildParams;
 import org.opensearch.gradle.info.GlobalBuildInfoPlugin;
 import org.opensearch.gradle.precommit.PrecommitTaskPlugin;
@@ -256,10 +257,10 @@ public class OpenSearchJavaPlugin implements Plugin<Project> {
             );
         });
 
-        project.getPluginManager().apply("nebula.info-broker");
-        project.getPluginManager().apply("nebula.info-basic");
-        project.getPluginManager().apply("nebula.info-java");
-        project.getPluginManager().apply("nebula.info-jar");
+        project.getPluginManager().apply("com.netflix.nebula.info-broker");
+        project.getPluginManager().apply("com.netflix.nebula.info-basic");
+        project.getPluginManager().apply("com.netflix.nebula.info-java");
+        project.getPluginManager().apply("com.netflix.nebula.info-jar");
     }
 
     private static void configureJavadoc(Project project) {

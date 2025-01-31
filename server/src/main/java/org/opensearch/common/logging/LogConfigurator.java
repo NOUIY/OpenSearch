@@ -41,7 +41,6 @@ import org.apache.logging.log4j.core.config.builder.api.ConfigurationBuilder;
 import org.apache.logging.log4j.core.config.builder.api.ConfigurationBuilderFactory;
 import org.apache.logging.log4j.core.config.builder.impl.BuiltConfiguration;
 import org.apache.logging.log4j.core.config.composite.CompositeConfiguration;
-import org.apache.logging.log4j.core.config.plugins.util.PluginManager;
 import org.apache.logging.log4j.core.config.properties.PropertiesConfiguration;
 import org.apache.logging.log4j.core.config.properties.PropertiesConfigurationFactory;
 import org.apache.logging.log4j.status.StatusConsoleListener;
@@ -66,9 +65,7 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.EnumSet;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -143,13 +140,6 @@ public class LogConfigurator {
     }
 
     /**
-     * Load logging plugins so we can have {@code node_name} in the pattern.
-     */
-    public static void loadLog4jPlugins() {
-        PluginManager.addPackage(LogConfigurator.class.getPackage().getName());
-    }
-
-    /**
      * Sets the node name. This is called before logging is configured if the
      * node name is set in opensearch.yml. Otherwise it is called as soon
      * as the node id is available.
@@ -174,15 +164,12 @@ public class LogConfigurator {
         Objects.requireNonNull(configsPath);
         Objects.requireNonNull(logsPath);
 
-        loadLog4jPlugins();
-
         setLogConfigurationSystemProperty(logsPath, settings);
         // we initialize the status logger immediately otherwise Log4j will complain when we try to get the context
         configureStatusLogger();
 
         final LoggerContext context = (LoggerContext) LogManager.getContext(false);
 
-        final Set<String> locationsWithDeprecatedPatterns = Collections.synchronizedSet(new HashSet<>());
         final List<AbstractConfiguration> configurations = new ArrayList<>();
         final PropertiesConfigurationFactory factory = new PropertiesConfigurationFactory();
         final Set<FileVisitOption> options = EnumSet.of(FileVisitOption.FOLLOW_LINKS);
@@ -206,12 +193,8 @@ public class LogConfigurator {
 
         // Redirect stdout/stderr to log4j. While we ensure Elasticsearch code does not write to those streams,
         // third party libraries may do that
-        System.setOut(
-            new PrintStream(new LoggingOutputStream(LogManager.getLogger("stdout"), Level.INFO), false, StandardCharsets.UTF_8.name())
-        );
-        System.setErr(
-            new PrintStream(new LoggingOutputStream(LogManager.getLogger("stderr"), Level.WARN), false, StandardCharsets.UTF_8.name())
-        );
+        System.setOut(new PrintStream(new LoggingOutputStream(LogManager.getLogger("stdout"), Level.INFO), false, StandardCharsets.UTF_8));
+        System.setErr(new PrintStream(new LoggingOutputStream(LogManager.getLogger("stderr"), Level.WARN), false, StandardCharsets.UTF_8));
     }
 
     private static void configureStatusLogger() {

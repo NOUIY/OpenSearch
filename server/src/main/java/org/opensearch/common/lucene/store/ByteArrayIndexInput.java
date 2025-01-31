@@ -32,6 +32,8 @@
 package org.opensearch.common.lucene.store;
 
 import org.apache.lucene.store.IndexInput;
+import org.apache.lucene.store.RandomAccessInput;
+import org.apache.lucene.util.BitUtil;
 
 import java.io.EOFException;
 import java.io.IOException;
@@ -41,14 +43,14 @@ import java.io.IOException;
  *
  * @opensearch.internal
  */
-public class ByteArrayIndexInput extends IndexInput {
+public class ByteArrayIndexInput extends IndexInput implements RandomAccessInput {
     private final byte[] bytes;
 
+    private final int offset;
+
+    private final int length;
+
     private int pos;
-
-    private int offset;
-
-    private int length;
 
     public ByteArrayIndexInput(String resourceDesc, byte[] bytes) {
         this(resourceDesc, bytes, 0, bytes.length);
@@ -106,18 +108,44 @@ public class ByteArrayIndexInput extends IndexInput {
 
     @Override
     public byte readByte() throws IOException {
-        if (pos >= offset + length) {
-            throw new EOFException("seek past EOF");
-        }
+        validatePos(pos, Byte.BYTES);
         return bytes[offset + pos++];
     }
 
     @Override
     public void readBytes(final byte[] b, final int offset, int len) throws IOException {
-        if (pos + len > this.offset + length) {
-            throw new EOFException("seek past EOF");
-        }
+        validatePos(pos, len);
         System.arraycopy(bytes, this.offset + pos, b, offset, len);
         pos += len;
+    }
+
+    @Override
+    public byte readByte(long pos) throws IOException {
+        validatePos(pos, Byte.BYTES);
+        return bytes[offset + (int) pos];
+    }
+
+    @Override
+    public short readShort(long pos) throws IOException {
+        validatePos(pos, Short.BYTES);
+        return (short) BitUtil.VH_LE_SHORT.get(bytes, offset + (int) pos);
+    }
+
+    @Override
+    public int readInt(long pos) throws IOException {
+        validatePos(pos, Integer.BYTES);
+        return (int) BitUtil.VH_LE_INT.get(bytes, offset + (int) pos);
+    }
+
+    @Override
+    public long readLong(long pos) throws IOException {
+        validatePos(pos, Long.BYTES);
+        return (long) BitUtil.VH_LE_LONG.get(bytes, offset + (int) pos);
+    }
+
+    private void validatePos(long pos, int len) throws EOFException {
+        if (pos < 0 || pos + len > length) {
+            throw new EOFException("seek past EOF");
+        }
     }
 }

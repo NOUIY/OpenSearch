@@ -9,7 +9,7 @@
 package org.opensearch.tasks;
 
 import org.opensearch.action.search.SearchShardTask;
-import org.opensearch.search.backpressure.trackers.TaskResourceUsageTracker;
+import org.opensearch.search.backpressure.trackers.TaskResourceUsageTrackers.TaskResourceUsageTracker;
 import org.opensearch.test.OpenSearchTestCase;
 
 import java.util.ArrayList;
@@ -64,8 +64,13 @@ public class TaskCancellationTests extends OpenSearchTestCase {
             public void update(Task task) {}
 
             @Override
-            public Optional<TaskCancellation.Reason> cancellationReason(Task task) {
+            public Optional<TaskCancellation.Reason> checkAndMaybeGetCancellationReason(Task task) {
                 return Optional.empty();
+            }
+
+            @Override
+            public TaskResourceUsageTracker.Stats stats(List<? extends Task> activeTasks) {
+                return null;
             }
         };
     }

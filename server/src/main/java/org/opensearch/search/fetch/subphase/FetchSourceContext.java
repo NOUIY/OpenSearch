@@ -33,16 +33,17 @@
 package org.opensearch.search.fetch.subphase;
 
 import org.opensearch.common.Booleans;
-import org.opensearch.common.ParseField;
-import org.opensearch.common.ParsingException;
-import org.opensearch.common.Strings;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.io.stream.StreamOutput;
-import org.opensearch.common.io.stream.Writeable;
-import org.opensearch.common.xcontent.ToXContentObject;
-import org.opensearch.common.xcontent.XContentBuilder;
-import org.opensearch.common.xcontent.XContentParser;
+import org.opensearch.common.annotation.PublicApi;
 import org.opensearch.common.xcontent.support.XContentMapValues;
+import org.opensearch.core.ParseField;
+import org.opensearch.core.common.ParsingException;
+import org.opensearch.core.common.Strings;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.core.common.io.stream.Writeable;
+import org.opensearch.core.xcontent.ToXContentObject;
+import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.rest.RestRequest;
 
 import java.io.IOException;
@@ -55,8 +56,9 @@ import java.util.function.Function;
 /**
  * Context used to fetch the {@code _source}.
  *
- * @opensearch.internal
+ * @opensearch.api
  */
+@PublicApi(since = "1.0.0")
 public class FetchSourceContext implements Writeable, ToXContentObject {
 
     public static final ParseField INCLUDES_FIELD = new ParseField("includes", "include");
@@ -150,7 +152,7 @@ public class FetchSourceContext implements Writeable, ToXContentObject {
             while ((token = parser.nextToken()) != XContentParser.Token.END_ARRAY) {
                 list.add(parser.text());
             }
-            includes = list.toArray(new String[list.size()]);
+            includes = list.toArray(new String[0]);
         } else if (token == XContentParser.Token.START_OBJECT) {
             String currentFieldName = null;
             while ((token = parser.nextToken()) != XContentParser.Token.END_OBJECT) {
@@ -170,7 +172,7 @@ public class FetchSourceContext implements Writeable, ToXContentObject {
                                 );
                             }
                         }
-                        includes = includesList.toArray(new String[includesList.size()]);
+                        includes = includesList.toArray(new String[0]);
                     } else if (EXCLUDES_FIELD.match(currentFieldName, parser.getDeprecationHandler())) {
                         List<String> excludesList = new ArrayList<>();
                         while ((token = parser.nextToken()) != XContentParser.Token.END_ARRAY) {
@@ -184,7 +186,7 @@ public class FetchSourceContext implements Writeable, ToXContentObject {
                                 );
                             }
                         }
-                        excludes = excludesList.toArray(new String[excludesList.size()]);
+                        excludes = excludesList.toArray(new String[0]);
                     } else {
                         throw new ParsingException(
                             parser.getTokenLocation(),

@@ -32,21 +32,31 @@
 
 package org.opensearch.search.aggregations.pipeline;
 
+import com.carrotsearch.randomizedtesting.annotations.ParametersFactory;
+
 import org.opensearch.action.index.IndexRequestBuilder;
 import org.opensearch.action.search.SearchResponse;
+import org.opensearch.common.settings.Settings;
+import org.opensearch.search.aggregations.BucketOrder;
 import org.opensearch.search.aggregations.bucket.histogram.Histogram;
 import org.opensearch.search.aggregations.bucket.histogram.Histogram.Bucket;
-import org.opensearch.search.aggregations.bucket.terms.Terms;
 import org.opensearch.search.aggregations.bucket.terms.IncludeExclude;
+import org.opensearch.search.aggregations.bucket.terms.Terms;
 import org.opensearch.search.aggregations.metrics.Sum;
 import org.opensearch.search.aggregations.pipeline.BucketHelpers.GapPolicy;
-import org.opensearch.search.aggregations.BucketOrder;
 import org.opensearch.test.OpenSearchIntegTestCase;
+import org.opensearch.test.ParameterizedStaticSettingsOpenSearchIntegTestCase;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 
 import static org.opensearch.common.xcontent.XContentFactory.jsonBuilder;
+import static org.opensearch.search.SearchService.CLUSTER_CONCURRENT_SEGMENT_SEARCH_MODE;
+import static org.opensearch.search.SearchService.CONCURRENT_SEGMENT_SEARCH_MODE_ALL;
+import static org.opensearch.search.SearchService.CONCURRENT_SEGMENT_SEARCH_MODE_AUTO;
+import static org.opensearch.search.SearchService.CONCURRENT_SEGMENT_SEARCH_MODE_NONE;
 import static org.opensearch.search.aggregations.AggregationBuilders.histogram;
 import static org.opensearch.search.aggregations.AggregationBuilders.sum;
 import static org.opensearch.search.aggregations.AggregationBuilders.terms;
@@ -58,7 +68,7 @@ import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.core.IsNull.notNullValue;
 
 @OpenSearchIntegTestCase.SuiteScopeTestCase
-public class MinBucketIT extends OpenSearchIntegTestCase {
+public class MinBucketIT extends ParameterizedStaticSettingsOpenSearchIntegTestCase {
 
     private static final String SINGLE_VALUED_FIELD_NAME = "l_value";
 
@@ -68,6 +78,22 @@ public class MinBucketIT extends OpenSearchIntegTestCase {
     static int maxRandomValue;
     static int numValueBuckets;
     static long[] valueCounts;
+
+    public MinBucketIT(Settings staticSettings) {
+        super(staticSettings);
+    }
+
+    @ParametersFactory
+    public static Collection<Object[]> parameters() {
+        return Arrays.asList(
+            new Object[] {
+                Settings.builder().put(CLUSTER_CONCURRENT_SEGMENT_SEARCH_MODE.getKey(), CONCURRENT_SEGMENT_SEARCH_MODE_ALL).build() },
+            new Object[] {
+                Settings.builder().put(CLUSTER_CONCURRENT_SEGMENT_SEARCH_MODE.getKey(), CONCURRENT_SEGMENT_SEARCH_MODE_AUTO).build() },
+            new Object[] {
+                Settings.builder().put(CLUSTER_CONCURRENT_SEGMENT_SEARCH_MODE.getKey(), CONCURRENT_SEGMENT_SEARCH_MODE_NONE).build() }
+        );
+    }
 
     @Override
     public void setupSuiteScopeCluster() throws Exception {
@@ -148,7 +174,7 @@ public class MinBucketIT extends OpenSearchIntegTestCase {
         assertThat(minBucketValue, notNullValue());
         assertThat(minBucketValue.getName(), equalTo("min_bucket"));
         assertThat(minBucketValue.value(), equalTo(minValue));
-        assertThat(minBucketValue.keys(), equalTo(minKeys.toArray(new String[minKeys.size()])));
+        assertThat(minBucketValue.keys(), equalTo(minKeys.toArray(new String[0])));
     }
 
     public void testDocCountAsSubAgg() throws Exception {
@@ -200,7 +226,7 @@ public class MinBucketIT extends OpenSearchIntegTestCase {
             assertThat(minBucketValue, notNullValue());
             assertThat(minBucketValue.getName(), equalTo("min_bucket"));
             assertThat(minBucketValue.value(), equalTo(minValue));
-            assertThat(minBucketValue.keys(), equalTo(minKeys.toArray(new String[minKeys.size()])));
+            assertThat(minBucketValue.keys(), equalTo(minKeys.toArray(new String[0])));
         }
     }
 
@@ -240,7 +266,7 @@ public class MinBucketIT extends OpenSearchIntegTestCase {
         assertThat(minBucketValue, notNullValue());
         assertThat(minBucketValue.getName(), equalTo("min_bucket"));
         assertThat(minBucketValue.value(), equalTo(minValue));
-        assertThat(minBucketValue.keys(), equalTo(minKeys.toArray(new String[minKeys.size()])));
+        assertThat(minBucketValue.keys(), equalTo(minKeys.toArray(new String[0])));
     }
 
     public void testMetricAsSubAgg() throws Exception {
@@ -299,7 +325,7 @@ public class MinBucketIT extends OpenSearchIntegTestCase {
             assertThat(minBucketValue, notNullValue());
             assertThat(minBucketValue.getName(), equalTo("min_bucket"));
             assertThat(minBucketValue.value(), equalTo(minValue));
-            assertThat(minBucketValue.keys(), equalTo(minKeys.toArray(new String[minKeys.size()])));
+            assertThat(minBucketValue.keys(), equalTo(minKeys.toArray(new String[0])));
         }
     }
 
@@ -357,7 +383,7 @@ public class MinBucketIT extends OpenSearchIntegTestCase {
             assertThat(minBucketValue, notNullValue());
             assertThat(minBucketValue.getName(), equalTo("min_bucket"));
             assertThat(minBucketValue.value(), equalTo(minValue));
-            assertThat(minBucketValue.keys(), equalTo(minKeys.toArray(new String[minKeys.size()])));
+            assertThat(minBucketValue.keys(), equalTo(minKeys.toArray(new String[0])));
         }
     }
 
@@ -438,7 +464,7 @@ public class MinBucketIT extends OpenSearchIntegTestCase {
             assertThat(minBucketValue, notNullValue());
             assertThat(minBucketValue.getName(), equalTo("min_histo_bucket"));
             assertThat(minBucketValue.value(), equalTo(minHistoValue));
-            assertThat(minBucketValue.keys(), equalTo(minHistoKeys.toArray(new String[minHistoKeys.size()])));
+            assertThat(minBucketValue.keys(), equalTo(minHistoKeys.toArray(new String[0])));
             if (minHistoValue < minTermsValue) {
                 minTermsValue = minHistoValue;
                 minTermsKeys = new ArrayList<>();
@@ -452,6 +478,6 @@ public class MinBucketIT extends OpenSearchIntegTestCase {
         assertThat(minBucketValue, notNullValue());
         assertThat(minBucketValue.getName(), equalTo("min_terms_bucket"));
         assertThat(minBucketValue.value(), equalTo(minTermsValue));
-        assertThat(minBucketValue.keys(), equalTo(minTermsKeys.toArray(new String[minTermsKeys.size()])));
+        assertThat(minBucketValue.keys(), equalTo(minTermsKeys.toArray(new String[0])));
     }
 }

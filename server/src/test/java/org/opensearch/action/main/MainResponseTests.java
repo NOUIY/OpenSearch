@@ -35,12 +35,11 @@ package org.opensearch.action.main;
 import org.opensearch.Build;
 import org.opensearch.Version;
 import org.opensearch.cluster.ClusterName;
-import org.opensearch.common.Strings;
-import org.opensearch.common.io.stream.Writeable;
-import org.opensearch.common.xcontent.ToXContent;
-import org.opensearch.common.xcontent.XContentBuilder;
 import org.opensearch.common.xcontent.XContentFactory;
-import org.opensearch.common.xcontent.XContentParser;
+import org.opensearch.core.common.io.stream.Writeable;
+import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.test.AbstractSerializingTestCase;
 import org.opensearch.test.VersionUtils;
 
@@ -57,14 +56,14 @@ public class MainResponseTests extends AbstractSerializingTestCase<MainResponse>
         ClusterName clusterName = new ClusterName(randomAlphaOfLength(10));
         String nodeName = randomAlphaOfLength(10);
         final String date = new Date(randomNonNegativeLong()).toString();
-        Version version = VersionUtils.randomVersionBetween(random(), Version.V_1_0_0, Version.CURRENT);
+        Version version = VersionUtils.randomVersionBetween(random(), Version.V_2_0_0, Version.CURRENT);
         Build build = new Build(
             Build.Type.UNKNOWN,
             randomAlphaOfLength(8),
             date,
             randomBoolean(),
             version.toString(),
-            version.onOrAfter(Version.V_1_0_0) ? randomAlphaOfLength(10) : ""
+            randomAlphaOfLength(10)
         );
         return new MainResponse(nodeName, version, clusterName, clusterUuid, build);
     }
@@ -133,7 +132,7 @@ public class MainResponseTests extends AbstractSerializingTestCase<MainResponse>
                 + TAGLINE
                 + "\""
                 + "}",
-            Strings.toString(builder)
+            builder.toString()
         );
     }
 

@@ -34,12 +34,12 @@ package org.opensearch.cluster.routing;
 
 import org.opensearch.Version;
 import org.opensearch.common.UUIDs;
-import org.opensearch.index.Index;
-import org.opensearch.index.shard.ShardId;
-import org.opensearch.repositories.IndexId;
-import org.opensearch.snapshots.SnapshotId;
 import org.opensearch.common.io.stream.BytesStreamOutput;
+import org.opensearch.core.index.Index;
+import org.opensearch.core.index.shard.ShardId;
+import org.opensearch.repositories.IndexId;
 import org.opensearch.snapshots.Snapshot;
+import org.opensearch.snapshots.SnapshotId;
 import org.opensearch.test.OpenSearchTestCase;
 
 import java.io.IOException;
@@ -299,6 +299,18 @@ public class ShardRoutingTests extends OpenSearchTestCase {
                 );
             }
         }
+    }
+
+    public void testSwapPrimaryWithReplica() {
+        final ShardRouting unassignedShard0 = TestShardRouting.newShardRouting("test", 0, null, false, ShardRoutingState.UNASSIGNED);
+        assertThrows(AssertionError.class, unassignedShard0::moveActivePrimaryToReplica);
+
+        final ShardRouting activeShard0 = TestShardRouting.newShardRouting("test", 0, "node-1", false, ShardRoutingState.STARTED);
+        assertThrows(IllegalShardRoutingStateException.class, activeShard0::moveActivePrimaryToReplica);
+
+        final ShardRouting activeShard1 = TestShardRouting.newShardRouting("test", 0, "node-1", true, ShardRoutingState.STARTED);
+        final ShardRouting activeReplicaShard1 = activeShard1.moveActivePrimaryToReplica();
+        assertFalse(activeReplicaShard1.primary());
     }
 
     public void testExpectedSize() throws IOException {

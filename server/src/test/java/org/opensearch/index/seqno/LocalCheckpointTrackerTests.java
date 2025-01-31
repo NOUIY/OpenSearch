@@ -172,7 +172,7 @@ public class LocalCheckpointTrackerTests extends OpenSearchTestCase {
         assertThat(tracker.processedCheckpoint.get(), equalTo(maxOps - 1L));
         assertThat(tracker.processedSeqNo.size(), equalTo(aligned ? 0 : 1));
         if (aligned == false) {
-            assertThat(tracker.processedSeqNo.keys().iterator().next().value, equalTo(tracker.processedCheckpoint.get() / BIT_SET_SIZE));
+            assertThat(tracker.processedSeqNo.keySet().iterator().next(), equalTo(tracker.processedCheckpoint.get() / BIT_SET_SIZE));
         }
         assertThat(tracker.hasProcessed(randomFrom(seqNoList)), equalTo(true));
         final long notCompletedSeqNo = randomValueOtherThanMany(seqNoList::contains, OpenSearchTestCase::randomNonNegativeLong);
@@ -218,7 +218,7 @@ public class LocalCheckpointTrackerTests extends OpenSearchTestCase {
         assertThat(tracker.getProcessedCheckpoint(), equalTo(maxOps - 1L));
         assertThat(tracker.processedSeqNo.size(), is(oneOf(0, 1)));
         if (tracker.processedSeqNo.size() == 1) {
-            assertThat(tracker.processedSeqNo.keys().iterator().next().value, equalTo(tracker.processedCheckpoint.get() / BIT_SET_SIZE));
+            assertThat(tracker.processedSeqNo.keySet().iterator().next(), equalTo(tracker.processedCheckpoint.get() / BIT_SET_SIZE));
         }
     }
 
@@ -235,7 +235,7 @@ public class LocalCheckpointTrackerTests extends OpenSearchTestCase {
             seqNoPerThread[t] = randomSubsetOf(size, seqNos).toArray(new Integer[size]);
             seqNos.removeAll(Arrays.asList(seqNoPerThread[t]));
         }
-        seqNoPerThread[threads.length - 1] = seqNos.toArray(new Integer[seqNos.size()]);
+        seqNoPerThread[threads.length - 1] = seqNos.toArray(new Integer[0]);
         logger.info("--> will run [{}] threads, maxOps [{}], unfinished seq no [{}]", threads.length, maxOps, unFinishedSeq);
         final CyclicBarrier barrier = new CyclicBarrier(threads.length);
         for (int t = 0; t < threads.length; t++) {
@@ -272,7 +272,7 @@ public class LocalCheckpointTrackerTests extends OpenSearchTestCase {
         assertThat(tracker.hasProcessed(randomLongBetween(maxOps, Long.MAX_VALUE)), equalTo(false));
         assertThat(tracker.processedSeqNo.size(), is(oneOf(0, 1)));
         if (tracker.processedSeqNo.size() == 1) {
-            assertThat(tracker.processedSeqNo.keys().iterator().next().value, equalTo(tracker.processedCheckpoint.get() / BIT_SET_SIZE));
+            assertThat(tracker.processedSeqNo.keySet().iterator().next(), equalTo(tracker.processedCheckpoint.get() / BIT_SET_SIZE));
         }
     }
 

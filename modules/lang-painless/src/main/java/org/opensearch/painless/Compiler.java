@@ -73,9 +73,7 @@ final class Compiler {
      */
     private static final CodeSource CODESOURCE;
 
-    /**
-     * Setup the code privileges.
-     */
+    /* Setup the code privileges. */
     static {
         try {
             // Setup the code privileges.
@@ -212,8 +210,9 @@ final class Compiler {
         }
 
         additionalClasses.put(factoryClass.getName(), factoryClass);
-        for (int i = 0; i < factoryMethod.getParameterTypes().length; ++i) {
-            Class<?> parameterClazz = factoryMethod.getParameterTypes()[i];
+        final Class<?>[] parameterTypes = factoryMethod.getParameterTypes();
+        for (int i = 0; i < parameterTypes.length; ++i) {
+            Class<?> parameterClazz = parameterTypes[i];
             additionalClasses.put(parameterClazz.getName(), parameterClazz);
         }
     }

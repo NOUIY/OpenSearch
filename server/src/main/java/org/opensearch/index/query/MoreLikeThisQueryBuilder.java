@@ -37,8 +37,8 @@ import org.apache.lucene.index.Fields;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.Query;
-import org.opensearch.OpenSearchParseException;
 import org.opensearch.ExceptionsHelper;
+import org.opensearch.OpenSearchParseException;
 import org.opensearch.Version;
 import org.opensearch.action.RoutingMissingException;
 import org.opensearch.action.termvectors.MultiTermVectorsItemResponse;
@@ -48,21 +48,23 @@ import org.opensearch.action.termvectors.TermVectorsRequest;
 import org.opensearch.action.termvectors.TermVectorsResponse;
 import org.opensearch.client.Client;
 import org.opensearch.common.Nullable;
-import org.opensearch.common.ParseField;
-import org.opensearch.common.ParsingException;
-import org.opensearch.common.Strings;
-import org.opensearch.common.bytes.BytesReference;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.io.stream.StreamOutput;
-import org.opensearch.common.io.stream.Writeable;
 import org.opensearch.common.lucene.search.MoreLikeThisQuery;
 import org.opensearch.common.lucene.search.XMoreLikeThis;
 import org.opensearch.common.lucene.uid.Versions;
-import org.opensearch.common.xcontent.ToXContentObject;
-import org.opensearch.common.xcontent.XContentBuilder;
 import org.opensearch.common.xcontent.XContentFactory;
-import org.opensearch.common.xcontent.XContentParser;
 import org.opensearch.common.xcontent.XContentType;
+import org.opensearch.core.ParseField;
+import org.opensearch.core.common.ParsingException;
+import org.opensearch.core.common.Strings;
+import org.opensearch.core.common.bytes.BytesReference;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.core.common.io.stream.Writeable;
+import org.opensearch.core.xcontent.MediaType;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
+import org.opensearch.core.xcontent.ToXContentObject;
+import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.index.VersionType;
 import org.opensearch.index.mapper.IdFieldMapper;
 import org.opensearch.index.mapper.KeywordFieldMapper.KeywordFieldType;
@@ -85,7 +87,7 @@ import static org.opensearch.common.xcontent.XContentFactory.jsonBuilder;
 
 /**
  * A more like this query that finds documents that are "like" the provided set of document(s).
- *
+ * <p>
  * The documents are provided as a set of strings and/or a list of {@link Item}.
  *
  * @opensearch.internal
@@ -170,7 +172,7 @@ public class MoreLikeThisQueryBuilder extends AbstractQueryBuilder<MoreLikeThisQ
         private String index;
         private String id;
         private BytesReference doc;
-        private XContentType xContentType;
+        private MediaType mediaType;
         private String[] fields;
         private Map<String, String> perFieldAnalyzer;
         private String routing;
@@ -187,7 +189,7 @@ public class MoreLikeThisQueryBuilder extends AbstractQueryBuilder<MoreLikeThisQ
             this.id = copy.id;
             this.routing = copy.routing;
             this.doc = copy.doc;
-            this.xContentType = copy.xContentType;
+            this.mediaType = copy.mediaType;
             this.fields = copy.fields;
             this.perFieldAnalyzer = copy.perFieldAnalyzer;
             this.version = copy.version;
@@ -220,7 +222,7 @@ public class MoreLikeThisQueryBuilder extends AbstractQueryBuilder<MoreLikeThisQ
             }
             this.index = index;
             this.doc = BytesReference.bytes(doc);
-            this.xContentType = doc.contentType();
+            this.mediaType = doc.contentType();
         }
 
         /**
@@ -234,7 +236,11 @@ public class MoreLikeThisQueryBuilder extends AbstractQueryBuilder<MoreLikeThisQ
             }
             if (in.readBoolean()) {
                 doc = (BytesReference) in.readGenericValue();
-                xContentType = in.readEnum(XContentType.class);
+                if (in.getVersion().onOrAfter(Version.V_2_10_0)) {
+                    mediaType = in.readMediaType();
+                } else {
+                    mediaType = in.readEnum(XContentType.class);
+                }
             } else {
                 id = in.readString();
             }
@@ -255,7 +261,11 @@ public class MoreLikeThisQueryBuilder extends AbstractQueryBuilder<MoreLikeThisQ
             out.writeBoolean(doc != null);
             if (doc != null) {
                 out.writeGenericValue(doc);
-                out.writeEnum(xContentType);
+                if (out.getVersion().onOrAfter(Version.V_2_10_0)) {
+                    mediaType.writeTo(out);
+                } else {
+                    out.writeEnum((XContentType) mediaType);
+                }
             } else {
                 out.writeString(id);
             }
@@ -331,8 +341,8 @@ public class MoreLikeThisQueryBuilder extends AbstractQueryBuilder<MoreLikeThisQ
             return this;
         }
 
-        XContentType xContentType() {
-            return xContentType;
+        MediaType mediaType() {
+            return mediaType;
         }
 
         /**
@@ -351,7 +361,7 @@ public class MoreLikeThisQueryBuilder extends AbstractQueryBuilder<MoreLikeThisQ
                 .termStatistics(false);
             // for artificial docs to make sure that the id has changed in the item too
             if (doc != null) {
-                termVectorsRequest.doc(doc, true, xContentType);
+                termVectorsRequest.doc(doc, true, mediaType);
                 this.id = termVectorsRequest.id();
             }
             return termVectorsRequest;
@@ -373,14 +383,14 @@ public class MoreLikeThisQueryBuilder extends AbstractQueryBuilder<MoreLikeThisQ
                         item.id = parser.text();
                     } else if (DOC.match(currentFieldName, parser.getDeprecationHandler())) {
                         item.doc = BytesReference.bytes(jsonBuilder().copyCurrentStructure(parser));
-                        item.xContentType = XContentType.JSON;
+                        item.mediaType = MediaTypeRegistry.JSON;
                     } else if (FIELDS.match(currentFieldName, parser.getDeprecationHandler())) {
                         if (token == XContentParser.Token.START_ARRAY) {
                             List<String> fields = new ArrayList<>();
                             while (parser.nextToken() != XContentParser.Token.END_ARRAY) {
                                 fields.add(parser.text());
                             }
-                            item.fields(fields.toArray(new String[fields.size()]));
+                            item.fields(fields.toArray(new String[0]));
                         } else {
                             throw new OpenSearchParseException("failed to parse More Like This item. field [fields] must be an array");
                         }
@@ -419,7 +429,7 @@ public class MoreLikeThisQueryBuilder extends AbstractQueryBuilder<MoreLikeThisQ
             }
             if (this.doc != null) {
                 try (InputStream stream = this.doc.streamInput()) {
-                    builder.rawField(DOC.getPreferredName(), stream, xContentType);
+                    builder.rawField(DOC.getPreferredName(), stream, mediaType);
                 }
             }
             if (this.fields != null) {
@@ -446,7 +456,7 @@ public class MoreLikeThisQueryBuilder extends AbstractQueryBuilder<MoreLikeThisQ
                 XContentBuilder builder = XContentFactory.jsonBuilder();
                 builder.prettyPrint();
                 toXContent(builder, EMPTY_PARAMS);
-                return Strings.toString(builder);
+                return builder.toString();
             } catch (Exception e) {
                 return "{ \"error\" : \"" + ExceptionsHelper.detailedMessage(e) + "\"}";
             }
@@ -680,7 +690,7 @@ public class MoreLikeThisQueryBuilder extends AbstractQueryBuilder<MoreLikeThisQ
         if (stopWords == null) {
             throw new IllegalArgumentException("requires stopwords to be non-null");
         }
-        this.stopWords = stopWords.toArray(new String[stopWords.size()]);
+        this.stopWords = stopWords.toArray(new String[0]);
         return this;
     }
 
@@ -889,11 +899,11 @@ public class MoreLikeThisQueryBuilder extends AbstractQueryBuilder<MoreLikeThisQ
             throw new ParsingException(parser.getTokenLocation(), "more_like_this requires 'fields' to be non-empty");
         }
 
-        String[] fieldsArray = fields == null ? null : fields.toArray(new String[fields.size()]);
-        String[] likeTextsArray = likeTexts.isEmpty() ? null : likeTexts.toArray(new String[likeTexts.size()]);
-        String[] unlikeTextsArray = unlikeTexts.isEmpty() ? null : unlikeTexts.toArray(new String[unlikeTexts.size()]);
-        Item[] likeItemsArray = likeItems.isEmpty() ? null : likeItems.toArray(new Item[likeItems.size()]);
-        Item[] unlikeItemsArray = unlikeItems.isEmpty() ? null : unlikeItems.toArray(new Item[unlikeItems.size()]);
+        String[] fieldsArray = fields == null ? null : fields.toArray(new String[0]);
+        String[] likeTextsArray = likeTexts.isEmpty() ? null : likeTexts.toArray(new String[0]);
+        String[] unlikeTextsArray = unlikeTexts.isEmpty() ? null : unlikeTexts.toArray(new String[0]);
+        Item[] likeItemsArray = likeItems.isEmpty() ? null : likeItems.toArray(new Item[0]);
+        Item[] unlikeItemsArray = unlikeItems.isEmpty() ? null : unlikeItems.toArray(new Item[0]);
 
         MoreLikeThisQueryBuilder moreLikeThisQueryBuilder = new MoreLikeThisQueryBuilder(fieldsArray, likeTextsArray, likeItemsArray)
             .unlike(unlikeTextsArray)
@@ -1017,7 +1027,7 @@ public class MoreLikeThisQueryBuilder extends AbstractQueryBuilder<MoreLikeThisQ
         if (moreLikeFields.isEmpty()) {
             return null;
         }
-        mltQuery.setMoreLikeFields(moreLikeFields.toArray(new String[moreLikeFields.size()]));
+        mltQuery.setMoreLikeFields(moreLikeFields.toArray(new String[0]));
 
         // handle like texts
         if (likeTexts.length > 0) {
@@ -1090,7 +1100,7 @@ public class MoreLikeThisQueryBuilder extends AbstractQueryBuilder<MoreLikeThisQ
             if (useDefaultField) {
                 item.fields("*");
             } else {
-                item.fields(moreLikeFields.toArray(new String[moreLikeFields.size()]));
+                item.fields(moreLikeFields.toArray(new String[0]));
             }
         }
     }

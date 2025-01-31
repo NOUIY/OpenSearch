@@ -47,8 +47,6 @@ import org.apache.hc.core5.http.nio.ssl.TlsStrategy;
 import org.apache.hc.core5.reactor.ssl.TlsDetails;
 import org.apache.hc.core5.ssl.SSLContexts;
 import org.apache.hc.core5.util.Timeout;
-import org.apache.lucene.util.SetOnce;
-import org.opensearch.LegacyESVersion;
 import org.opensearch.Version;
 import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksAction;
 import org.opensearch.action.admin.cluster.repositories.put.PutRepositoryRequest;
@@ -61,23 +59,25 @@ import org.opensearch.client.RestClient;
 import org.opensearch.client.RestClientBuilder;
 import org.opensearch.client.WarningsHandler;
 import org.opensearch.common.CheckedRunnable;
-import org.opensearch.common.Strings;
+import org.opensearch.common.SetOnce;
 import org.opensearch.common.io.PathUtils;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.ThreadContext;
-import org.opensearch.common.xcontent.DeprecationHandler;
-import org.opensearch.common.xcontent.NamedXContentRegistry;
-import org.opensearch.common.xcontent.XContentBuilder;
+import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.common.xcontent.XContentHelper;
-import org.opensearch.common.xcontent.XContentParser;
-import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.common.xcontent.support.XContentMapValues;
-import org.opensearch.core.internal.io.IOUtils;
+import org.opensearch.core.common.Strings;
+import org.opensearch.core.rest.RestStatus;
+import org.opensearch.core.xcontent.DeprecationHandler;
+import org.opensearch.core.xcontent.MediaType;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
+import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.index.IndexSettings;
 import org.opensearch.index.seqno.ReplicationTracker;
-import org.opensearch.rest.RestStatus;
 import org.opensearch.snapshots.SnapshotState;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.test.rest.yaml.ObjectPath;
@@ -144,10 +144,10 @@ public abstract class OpenSearchRestTestCase extends OpenSearchTestCase {
      * Convert the entity from a {@link Response} into a map of maps.
      */
     public static Map<String, Object> entityAsMap(Response response) throws IOException {
-        XContentType xContentType = XContentType.fromMediaType(response.getEntity().getContentType());
+        MediaType mediaType = MediaType.fromMediaType(response.getEntity().getContentType());
         // EMPTY and THROW are fine here because `.map` doesn't use named x content or deprecation
         try (
-            XContentParser parser = xContentType.xContent()
+            XContentParser parser = mediaType.xContent()
                 .createParser(
                     NamedXContentRegistry.EMPTY,
                     DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
@@ -162,10 +162,10 @@ public abstract class OpenSearchRestTestCase extends OpenSearchTestCase {
      * Convert the entity from a {@link Response} into a list of maps.
      */
     public static List<Object> entityAsList(Response response) throws IOException {
-        XContentType xContentType = XContentType.fromMediaType(response.getEntity().getContentType());
+        MediaType mediaType = MediaType.fromMediaType(response.getEntity().getContentType());
         // EMPTY and THROW are fine here because `.map` doesn't use named x content or deprecation
         try (
-            XContentParser parser = xContentType.xContent()
+            XContentParser parser = mediaType.xContent()
                 .createParser(
                     NamedXContentRegistry.EMPTY,
                     DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
@@ -208,8 +208,8 @@ public abstract class OpenSearchRestTestCase extends OpenSearchTestCase {
             }
             clusterHosts = unmodifiableList(hosts);
             logger.info("initializing REST clients against {}", clusterHosts);
-            client = buildClient(restClientSettings(), clusterHosts.toArray(new HttpHost[clusterHosts.size()]));
-            adminClient = buildClient(restAdminSettings(), clusterHosts.toArray(new HttpHost[clusterHosts.size()]));
+            client = buildClient(restClientSettings(), clusterHosts.toArray(new HttpHost[0]));
+            adminClient = buildClient(restAdminSettings(), clusterHosts.toArray(new HttpHost[0]));
 
             nodeVersions = new TreeSet<>();
             Map<?, ?> response = entityAsMap(adminClient.performRequest(new Request("GET", "_nodes/plugins")));
@@ -538,15 +538,6 @@ public abstract class OpenSearchRestTestCase extends OpenSearchTestCase {
 
     private void wipeCluster() throws Exception {
 
-        // Clean up SLM policies before trying to wipe snapshots so that no new ones get started by SLM after wiping
-        if (nodeVersions.first().before(Version.V_1_0_0)) { // SLM was introduced
-                                                            // in version 7.4
-            if (preserveSLMPoliciesUponCompletion() == false) {
-                // Clean up SLM policies before trying to wipe snapshots so that no new ones get started by SLM after wiping
-                deleteAllSLMPolicies();
-            }
-        }
-
         SetOnce<Map<String, List<Map<?, ?>>>> inProgressSnapshots = new SetOnce<>();
         if (waitForAllSnapshotsWiped()) {
             AtomicReference<Map<String, List<Map<?, ?>>>> snapshots = new AtomicReference<>();
@@ -597,10 +588,9 @@ public abstract class OpenSearchRestTestCase extends OpenSearchTestCase {
     }
 
     protected static void wipeAllIndices() throws IOException {
-        boolean includeHidden = minimumNodeVersion().onOrAfter(LegacyESVersion.V_7_7_0);
         try {
             final Request deleteRequest = new Request("DELETE", "*");
-            deleteRequest.addParameter("expand_wildcards", "open,closed" + (includeHidden ? ",hidden" : ""));
+            deleteRequest.addParameter("expand_wildcards", "open,closed,hidden");
             RequestOptions.Builder allowSystemIndexAccessWarningOptions = RequestOptions.DEFAULT.toBuilder();
             allowSystemIndexAccessWarningOptions.setWarningsHandler(warnings -> {
                 if (warnings.size() == 0) {
@@ -617,7 +607,7 @@ public abstract class OpenSearchRestTestCase extends OpenSearchTestCase {
             deleteRequest.setOptions(allowSystemIndexAccessWarningOptions);
             final Response response = adminClient().performRequest(deleteRequest);
             try (InputStream is = response.getEntity().getContent()) {
-                assertTrue((boolean) XContentHelper.convertToMap(XContentType.JSON.xContent(), is, true).get("acknowledged"));
+                assertTrue((boolean) XContentHelper.convertToMap(MediaTypeRegistry.JSON.xContent(), is, true).get("acknowledged"));
             }
         } catch (ResponseException e) {
             // 404 here just means we had no indexes
@@ -634,7 +624,7 @@ public abstract class OpenSearchRestTestCase extends OpenSearchTestCase {
             // We hit a version of ES that doesn't serialize DeleteDataStreamAction.Request#wildcardExpressionsOriginallySpecified field or
             // that doesn't support data streams so it's safe to ignore
             int statusCode = e.getResponse().getStatusLine().getStatusCode();
-            if (org.opensearch.common.collect.Set.of(404, 405, 500).contains(statusCode) == false) {
+            if (Set.of(404, 405, 500).contains(statusCode) == false) {
                 throw e;
             }
         }
@@ -705,25 +695,28 @@ public abstract class OpenSearchRestTestCase extends OpenSearchTestCase {
 
         if (mustClear) {
             Request request = new Request("PUT", "/_cluster/settings");
-            request.setJsonEntity(Strings.toString(clearCommand));
+            request.setJsonEntity(clearCommand.toString());
             adminClient().performRequest(request);
         }
     }
 
     protected void refreshAllIndices() throws IOException {
-        boolean includeHidden = minimumNodeVersion().onOrAfter(LegacyESVersion.V_7_7_0);
         Request refreshRequest = new Request("POST", "/_refresh");
-        refreshRequest.addParameter("expand_wildcards", "open" + (includeHidden ? ",hidden" : ""));
+        refreshRequest.addParameter("expand_wildcards", "open,hidden");
         // Allow system index deprecation warnings
         final Builder requestOptions = RequestOptions.DEFAULT.toBuilder();
         requestOptions.setWarningsHandler(warnings -> {
             if (warnings.isEmpty()) {
                 return false;
-            } else if (warnings.size() > 1) {
-                return true;
-            } else {
-                return warnings.get(0).startsWith("this request accesses system indices:") == false;
             }
+            boolean allSystemIndexWarnings = true;
+            for (String warning : warnings) {
+                if (!warning.startsWith("this request accesses system indices:")) {
+                    allSystemIndexWarnings = false;
+                    break;
+                }
+            }
+            return !allSystemIndexWarnings;
         });
         refreshRequest.setOptions(requestOptions);
         client().performRequest(refreshRequest);
@@ -985,7 +978,7 @@ public abstract class OpenSearchRestTestCase extends OpenSearchTestCase {
 
     protected static void createIndex(String name, Settings settings, String mapping, String aliases) throws IOException {
         Request request = new Request("PUT", "/" + name);
-        String entity = "{\"settings\": " + Strings.toString(settings);
+        String entity = "{\"settings\": " + Strings.toString(MediaTypeRegistry.JSON, settings);
         if (mapping != null) {
             entity += ",\"mappings\" : {" + mapping + "}";
         }
@@ -1011,17 +1004,11 @@ public abstract class OpenSearchRestTestCase extends OpenSearchTestCase {
 
     private static void updateIndexSettings(String index, Settings settings) throws IOException {
         Request request = new Request("PUT", "/" + index + "/_settings");
-        request.setJsonEntity(Strings.toString(settings));
+        request.setJsonEntity(Strings.toString(MediaTypeRegistry.JSON, settings));
         client().performRequest(request);
     }
 
     protected static void expectSoftDeletesWarning(Request request, String indexName) {
-        final List<String> esExpectedWarnings = Collections.singletonList(
-            "Creating indices with soft-deletes disabled is deprecated and will be removed in future Elasticsearch versions. "
-                + "Please do not specify value for setting [index.soft_deletes.enabled] of index ["
-                + indexName
-                + "]."
-        );
         final List<String> opensearchExpectedWarnings = Collections.singletonList(
             "Creating indices with soft-deletes disabled is deprecated and will be removed in future OpenSearch versions. "
                 + "Please do not specify value for setting [index.soft_deletes.enabled] of index ["
@@ -1029,24 +1016,8 @@ public abstract class OpenSearchRestTestCase extends OpenSearchTestCase {
                 + "]."
         );
         final Builder requestOptions = RequestOptions.DEFAULT.toBuilder();
-        if (nodeVersions.stream().allMatch(version -> version.onOrAfter(LegacyESVersion.V_7_6_0) && version.before(Version.V_1_0_0))) {
-            requestOptions.setWarningsHandler(warnings -> warnings.equals(esExpectedWarnings) == false);
-            request.setOptions(requestOptions);
-        } else if (nodeVersions.stream()
-            .anyMatch(version -> version.onOrAfter(LegacyESVersion.V_7_6_0) && version.before(Version.V_1_0_0))) {
-                requestOptions.setWarningsHandler(warnings -> warnings.isEmpty() == false && warnings.equals(esExpectedWarnings) == false);
-                request.setOptions(requestOptions);
-            }
-
-        if (nodeVersions.stream().allMatch(version -> version.onOrAfter(Version.V_1_0_0))) {
-            requestOptions.setWarningsHandler(warnings -> warnings.equals(opensearchExpectedWarnings) == false);
-            request.setOptions(requestOptions);
-        } else if (nodeVersions.stream().anyMatch(version -> version.onOrAfter(Version.V_1_0_0))) {
-            requestOptions.setWarningsHandler(
-                warnings -> warnings.isEmpty() == false && warnings.equals(opensearchExpectedWarnings) == false
-            );
-            request.setOptions(requestOptions);
-        }
+        requestOptions.setWarningsHandler(warnings -> warnings.equals(opensearchExpectedWarnings) == false);
+        request.setOptions(requestOptions);
     }
 
     protected static Map<String, Object> getIndexSettings(String index) throws IOException {
@@ -1054,7 +1025,7 @@ public abstract class OpenSearchRestTestCase extends OpenSearchTestCase {
         request.addParameter("flat_settings", "true");
         Response response = client().performRequest(request);
         try (InputStream is = response.getEntity().getContent()) {
-            return XContentHelper.convertToMap(XContentType.JSON.xContent(), is, true);
+            return XContentHelper.convertToMap(MediaTypeRegistry.JSON.xContent(), is, true);
         }
     }
 
@@ -1108,7 +1079,7 @@ public abstract class OpenSearchRestTestCase extends OpenSearchTestCase {
     }
 
     protected static Map<String, Object> responseAsMap(Response response) throws IOException {
-        XContentType entityContentType = XContentType.fromMediaType(response.getEntity().getContentType());
+        MediaType entityContentType = MediaType.fromMediaType(response.getEntity().getContentType());
         Map<String, Object> responseEntity = XContentHelper.convertToMap(
             entityContentType.xContent(),
             response.getEntity().getContent(),
@@ -1121,7 +1092,7 @@ public abstract class OpenSearchRestTestCase extends OpenSearchTestCase {
     protected static void registerRepository(String repository, String type, boolean verify, Settings settings) throws IOException {
         final Request request = new Request(HttpPut.METHOD_NAME, "_snapshot/" + repository);
         request.addParameter("verify", Boolean.toString(verify));
-        request.setJsonEntity(Strings.toString(new PutRepositoryRequest(repository).type(type).settings(settings)));
+        request.setJsonEntity(Strings.toString(MediaTypeRegistry.JSON, new PutRepositoryRequest(repository).type(type).settings(settings)));
 
         final Response response = client().performRequest(request);
         assertAcked("Failed to create repository [" + repository + "] of type [" + type + "]: " + response, response);
@@ -1215,7 +1186,6 @@ public abstract class OpenSearchRestTestCase extends OpenSearchTestCase {
      * that we have renewed every PRRL to the global checkpoint of the corresponding copy and properly synced to all copies.
      */
     public void ensurePeerRecoveryRetentionLeasesRenewedAndSynced(String index) throws Exception {
-        final boolean alwaysExists = minimumNodeVersion().onOrAfter(LegacyESVersion.V_7_6_0);
         assertBusy(() -> {
             Map<String, Object> stats = entityAsMap(client().performRequest(new Request("GET", index + "/_stats?level=shards")));
             @SuppressWarnings("unchecked")
@@ -1233,25 +1203,20 @@ public abstract class OpenSearchRestTestCase extends OpenSearchTestCase {
                         "retention_leases.leases",
                         copy
                     );
-                    if (alwaysExists == false && retentionLeases == null) {
-                        continue;
-                    }
                     assertNotNull(retentionLeases);
                     for (Map<String, ?> retentionLease : retentionLeases) {
                         if (((String) retentionLease.get("id")).startsWith("peer_recovery/")) {
                             assertThat(retentionLease.get("retaining_seq_no"), equalTo(globalCheckpoint + 1));
                         }
                     }
-                    if (alwaysExists) {
-                        List<String> existingLeaseIds = retentionLeases.stream()
-                            .map(lease -> (String) lease.get("id"))
-                            .collect(Collectors.toList());
-                        List<String> expectedLeaseIds = shard.stream()
-                            .map(shr -> (String) XContentMapValues.extractValue("routing.node", shr))
-                            .map(ReplicationTracker::getPeerRecoveryRetentionLeaseId)
-                            .collect(Collectors.toList());
-                        assertThat("not every active copy has established its PPRL", expectedLeaseIds, everyItem(in(existingLeaseIds)));
-                    }
+                    List<String> existingLeaseIds = retentionLeases.stream()
+                        .map(lease -> (String) lease.get("id"))
+                        .collect(Collectors.toList());
+                    List<String> expectedLeaseIds = shard.stream()
+                        .map(shr -> (String) XContentMapValues.extractValue("routing.node", shr))
+                        .map(ReplicationTracker::getPeerRecoveryRetentionLeaseId)
+                        .collect(Collectors.toList());
+                    assertThat("not every active copy has established its PPRL", expectedLeaseIds, everyItem(in(existingLeaseIds)));
                 }
             }
         }, 60, TimeUnit.SECONDS);
@@ -1284,14 +1249,14 @@ public abstract class OpenSearchRestTestCase extends OpenSearchTestCase {
         final Builder options = RequestOptions.DEFAULT.toBuilder();
         // 8.0 kept in warning message for legacy purposes TODO: changge to 3.0
         final List<String> warningMessage = Arrays.asList(
-            "Synced flush is deprecated and will be removed in 8.0. Use flush at _/flush or /{index}/_flush instead."
+            "Synced flush is deprecated and will be removed in 3.0. Use flush at _/flush or /{index}/_flush instead."
         );
         final List<String> expectedWarnings = Arrays.asList(
             "Synced flush was removed and a normal flush was performed instead. This transition will be removed in a future version."
         );
         if (nodeVersions.stream().allMatch(version -> version.onOrAfter(Version.V_2_0_0))) {
             options.setWarningsHandler(warnings -> warnings.isEmpty() == false && warnings.equals(expectedWarnings) == false);
-        } else if (nodeVersions.stream().anyMatch(version -> version.onOrAfter(LegacyESVersion.V_7_6_0))) {
+        } else {
             options.setWarningsHandler(
                 warnings -> warnings.isEmpty() == false
                     && warnings.equals(expectedWarnings) == false

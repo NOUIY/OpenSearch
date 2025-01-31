@@ -32,18 +32,19 @@
 
 package org.opensearch.action.admin.cluster.node.usage;
 
-import org.opensearch.LegacyESVersion;
 import org.opensearch.action.support.nodes.BaseNodesRequest;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.io.stream.StreamOutput;
+import org.opensearch.common.annotation.PublicApi;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
 
 import java.io.IOException;
 
 /**
  * Transport request for collecting OpenSearch telemetry
  *
- * @opensearch.internal
+ * @opensearch.api
  */
+@PublicApi(since = "1.0.0")
 public class NodesUsageRequest extends BaseNodesRequest<NodesUsageRequest> {
 
     private boolean restActions;
@@ -52,9 +53,7 @@ public class NodesUsageRequest extends BaseNodesRequest<NodesUsageRequest> {
     public NodesUsageRequest(StreamInput in) throws IOException {
         super(in);
         this.restActions = in.readBoolean();
-        if (in.getVersion().onOrAfter(LegacyESVersion.V_7_8_0)) {
-            this.aggregations = in.readBoolean();
-        }
+        this.aggregations = in.readBoolean();
     }
 
     /**
@@ -62,7 +61,7 @@ public class NodesUsageRequest extends BaseNodesRequest<NodesUsageRequest> {
      * passed, usage for all nodes will be returned.
      */
     public NodesUsageRequest(String... nodesIds) {
-        super(nodesIds);
+        super(false, nodesIds);
     }
 
     /**
@@ -116,8 +115,6 @@ public class NodesUsageRequest extends BaseNodesRequest<NodesUsageRequest> {
     public void writeTo(StreamOutput out) throws IOException {
         super.writeTo(out);
         out.writeBoolean(restActions);
-        if (out.getVersion().onOrAfter(LegacyESVersion.V_7_8_0)) {
-            out.writeBoolean(aggregations);
-        }
+        out.writeBoolean(aggregations);
     }
 }

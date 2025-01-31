@@ -33,7 +33,6 @@
 package org.opensearch.action.admin.indices.rollover;
 
 import org.opensearch.OpenSearchException;
-import org.opensearch.action.ActionListener;
 import org.opensearch.action.admin.indices.stats.IndicesStatsAction;
 import org.opensearch.action.admin.indices.stats.IndicesStatsRequest;
 import org.opensearch.action.admin.indices.stats.IndicesStatsResponse;
@@ -45,23 +44,28 @@ import org.opensearch.client.Client;
 import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.ClusterStateUpdateTask;
 import org.opensearch.cluster.block.ClusterBlockException;
-import org.opensearch.cluster.block.ClusterBlockLevel;
+import org.opensearch.cluster.block.ClusterBlocks;
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver;
 import org.opensearch.cluster.metadata.Metadata;
+import org.opensearch.cluster.service.ClusterManagerTaskKeys;
+import org.opensearch.cluster.service.ClusterManagerTaskThrottler;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.Nullable;
 import org.opensearch.common.inject.Inject;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.unit.ByteSizeValue;
+import org.opensearch.core.action.ActionListener;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.unit.ByteSizeValue;
 import org.opensearch.index.shard.DocsStats;
 import org.opensearch.tasks.Task;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportService;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -77,6 +81,7 @@ public class TransportRolloverAction extends TransportClusterManagerNodeAction<R
     private final MetadataRolloverService rolloverService;
     private final ActiveShardsObserver activeShardsObserver;
     private final Client client;
+    private final ClusterManagerTaskThrottler.ThrottlingKey rolloverIndexTaskKey;
 
     @Inject
     public TransportRolloverAction(
@@ -100,6 +105,8 @@ public class TransportRolloverAction extends TransportClusterManagerNodeAction<R
         this.rolloverService = rolloverService;
         this.client = client;
         this.activeShardsObserver = new ActiveShardsObserver(clusterService, threadPool);
+        // Task is onboarded for throttling, it will get retried from associated TransportClusterManagerNodeAction.
+        rolloverIndexTaskKey = clusterService.registerClusterManagerTask(ClusterManagerTaskKeys.ROLLOVER_INDEX_KEY, true);
     }
 
     @Override
@@ -122,11 +129,10 @@ public class TransportRolloverAction extends TransportClusterManagerNodeAction<R
             request.indicesOptions().expandWildcardsClosed()
         );
 
-        return state.blocks()
-            .indicesBlockedException(
-                ClusterBlockLevel.METADATA_WRITE,
-                indexNameExpressionResolver.concreteIndexNames(state, indicesOptions, request)
-            );
+        return ClusterBlocks.indicesWithRemoteSnapshotBlockedException(
+            new HashSet<>(Arrays.asList(indexNameExpressionResolver.concreteIndexNames(state, indicesOptions, request))),
+            state
+        );
     }
 
     @Override
@@ -202,6 +208,11 @@ public class TransportRolloverAction extends TransportClusterManagerNodeAction<R
                                     );
                                 }
                                 return rolloverResult.clusterState;
+                            }
+
+                            @Override
+                            public ClusterManagerTaskThrottler.ThrottlingKey getClusterManagerThrottlingKey() {
+                                return rolloverIndexTaskKey;
                             }
 
                             @Override

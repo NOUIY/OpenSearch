@@ -8,6 +8,7 @@
 
 package org.opensearch.cluster.routing.allocation;
 
+import org.opensearch.cluster.metadata.AutoExpandReplicas;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
@@ -25,7 +26,7 @@ import static org.opensearch.cluster.routing.allocation.decider.AwarenessAllocat
  * This {@link AwarenessReplicaBalance} gives total unique values of awareness attributes
  * It takes in effect only iff cluster.routing.allocation.awareness.attributes and
  * cluster.routing.allocation.awareness.force.zone.values both are specified.
- *
+ * <p>
  * This is used in enforcing total copy of shard is a maximum of unique values of awareness attributes
  * Helps in balancing shards across all awareness attributes and ensuring high availability of data.
  */
@@ -101,12 +102,22 @@ public class AwarenessReplicaBalance {
         return awarenessAttributes;
     }
 
-    public Optional<String> validate(int replicaCount) {
-        if ((replicaCount + 1) % maxAwarenessAttributes() != 0) {
-            String errorMessage = "expected total copies needs to be a multiple of total awareness attributes ["
-                + maxAwarenessAttributes()
-                + "]";
-            return Optional.of(errorMessage);
+    public Optional<String> validate(int replicaCount, AutoExpandReplicas autoExpandReplica) {
+        if (autoExpandReplica.isEnabled()) {
+            if ((autoExpandReplica.getMaxReplicas() != Integer.MAX_VALUE)
+                && ((autoExpandReplica.getMaxReplicas() + 1) % maxAwarenessAttributes() != 0)) {
+                String errorMessage = "expected max cap on auto expand to be a multiple of total awareness attributes ["
+                    + maxAwarenessAttributes()
+                    + "]";
+                return Optional.of(errorMessage);
+            }
+        } else {
+            if ((replicaCount + 1) % maxAwarenessAttributes() != 0) {
+                String errorMessage = "expected total copies needs to be a multiple of total awareness attributes ["
+                    + maxAwarenessAttributes()
+                    + "]";
+                return Optional.of(errorMessage);
+            }
         }
         return Optional.empty();
     }

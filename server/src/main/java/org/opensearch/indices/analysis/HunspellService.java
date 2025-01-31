@@ -38,11 +38,11 @@ import org.apache.lucene.analysis.hunspell.Dictionary;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.NIOFSDirectory;
 import org.opensearch.OpenSearchException;
-import org.opensearch.core.internal.io.IOUtils;
-import org.opensearch.common.io.FileSystemUtils;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Setting.Property;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.util.io.IOUtils;
+import org.opensearch.core.util.FileSystemUtils;
 import org.opensearch.env.Environment;
 
 import java.io.IOException;
@@ -123,7 +123,8 @@ public class HunspellService {
             try {
                 return loadDictionary(locale, settings, env);
             } catch (Exception e) {
-                throw new IllegalStateException("failed to load hunspell dictionary for locale: " + locale, e);
+                logger.error("Failed to load hunspell dictionary for locale: " + locale, e);
+                throw new IllegalStateException("Failed to load hunspell dictionary for locale: " + locale);
             }
         };
         if (!HUNSPELL_LAZY_LOAD.get(settings)) {

@@ -81,7 +81,7 @@ public class PrioritizedOpenSearchThreadPoolExecutor extends OpenSearchThreadPoo
         List<Pending> pending = new ArrayList<>();
         addPending(new ArrayList<>(current), pending, true);
         addPending(new ArrayList<>(getQueue()), pending, false);
-        return pending.toArray(new Pending[pending.size()]);
+        return pending.toArray(new Pending[0]);
     }
 
     public int getNumberOfPendingTasks() {
@@ -118,8 +118,9 @@ public class PrioritizedOpenSearchThreadPoolExecutor extends OpenSearchThreadPoo
                 TieBreakingPrioritizedRunnable t = (TieBreakingPrioritizedRunnable) runnable;
                 Runnable innerRunnable = t.runnable;
                 if (innerRunnable != null) {
-                    /** innerRunnable can be null if task is finished but not removed from executor yet,
-                     * see {@link TieBreakingPrioritizedRunnable#run} and {@link TieBreakingPrioritizedRunnable#runAndClean}
+                    /*
+                      innerRunnable can be null if task is finished but not removed from executor yet,
+                      see {@link TieBreakingPrioritizedRunnable#run} and {@link TieBreakingPrioritizedRunnable#runAndClean}
                      */
                     pending.add(new Pending(super.unwrap(innerRunnable), t.priority(), t.insertionOrder, executing));
                 }

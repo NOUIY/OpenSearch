@@ -32,6 +32,7 @@
 
 package org.opensearch.analysis.common;
 
+import org.apache.logging.log4j.LogManager;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.synonym.SynonymFilter;
@@ -43,11 +44,13 @@ import org.opensearch.index.IndexSettings;
 import org.opensearch.index.analysis.AbstractTokenFilterFactory;
 import org.opensearch.index.analysis.Analysis;
 import org.opensearch.index.analysis.AnalysisMode;
+import org.opensearch.index.analysis.AnalysisRegistry;
 import org.opensearch.index.analysis.CharFilterFactory;
 import org.opensearch.index.analysis.CustomAnalyzer;
 import org.opensearch.index.analysis.TokenFilterFactory;
 import org.opensearch.index.analysis.TokenizerFactory;
 
+import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
 import java.util.List;
@@ -63,8 +66,16 @@ public class SynonymTokenFilterFactory extends AbstractTokenFilterFactory {
     protected final Settings settings;
     protected final Environment environment;
     protected final AnalysisMode analysisMode;
+    private final String synonymAnalyzerName;
+    private final AnalysisRegistry analysisRegistry;
 
-    SynonymTokenFilterFactory(IndexSettings indexSettings, Environment env, String name, Settings settings) {
+    SynonymTokenFilterFactory(
+        IndexSettings indexSettings,
+        Environment env,
+        String name,
+        Settings settings,
+        AnalysisRegistry analysisRegistry
+    ) {
         super(indexSettings, name, settings);
         this.settings = settings;
 
@@ -82,6 +93,8 @@ public class SynonymTokenFilterFactory extends AbstractTokenFilterFactory {
         boolean updateable = settings.getAsBoolean("updateable", false);
         this.analysisMode = updateable ? AnalysisMode.SEARCH_TIME : AnalysisMode.ALL;
         this.environment = env;
+        this.synonymAnalyzerName = settings.get("synonym_analyzer", null);
+        this.analysisRegistry = analysisRegistry;
     }
 
     @Override
@@ -136,6 +149,17 @@ public class SynonymTokenFilterFactory extends AbstractTokenFilterFactory {
         List<TokenFilterFactory> tokenFilters,
         Function<String, TokenFilterFactory> allFilters
     ) {
+        if (synonymAnalyzerName != null) {
+            Analyzer customSynonymAnalyzer;
+            try {
+                customSynonymAnalyzer = analysisRegistry.getAnalyzer(synonymAnalyzerName);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            if (customSynonymAnalyzer != null) {
+                return customSynonymAnalyzer;
+            }
+        }
         return new CustomAnalyzer(
             tokenizer,
             charFilters.toArray(new CharFilterFactory[0]),
@@ -155,14 +179,15 @@ public class SynonymTokenFilterFactory extends AbstractTokenFilterFactory {
             }
             return parser.build();
         } catch (Exception e) {
-            throw new IllegalArgumentException("failed to build synonyms", e);
+            LogManager.getLogger(SynonymTokenFilterFactory.class).error("Failed to build synonyms: ", e);
+            throw new IllegalArgumentException("Failed to build synonyms");
         }
     }
 
     Reader getRulesFromSettings(Environment env) {
         Reader rulesReader;
         if (settings.getAsList("synonyms", null) != null) {
-            List<String> rulesList = Analysis.getWordList(env, settings, "synonyms");
+            List<String> rulesList = Analysis.parseWordList(env, settings, "synonyms", s -> s);
             StringBuilder sb = new StringBuilder();
             for (String line : rulesList) {
                 sb.append(line).append(System.lineSeparator());
@@ -175,5 +200,4 @@ public class SynonymTokenFilterFactory extends AbstractTokenFilterFactory {
         }
         return rulesReader;
     }
-
 }

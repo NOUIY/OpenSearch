@@ -32,16 +32,17 @@
 
 package org.opensearch.index.analysis;
 
-import java.util.List;
-import java.util.Set;
 import org.apache.lucene.analysis.ko.KoreanAnalyzer;
 import org.apache.lucene.analysis.ko.KoreanPartOfSpeechStopFilter;
 import org.apache.lucene.analysis.ko.KoreanTokenizer;
-import org.apache.lucene.analysis.ko.dict.UserDictionary;
 import org.apache.lucene.analysis.ko.POS;
+import org.apache.lucene.analysis.ko.dict.UserDictionary;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.env.Environment;
 import org.opensearch.index.IndexSettings;
+
+import java.util.List;
+import java.util.Set;
 
 import static org.opensearch.index.analysis.NoriPartOfSpeechStopFilterFactory.resolvePOSList;
 
@@ -52,7 +53,7 @@ public class NoriAnalyzerProvider extends AbstractIndexAnalyzerProvider<KoreanAn
         super(indexSettings, name, settings);
         final KoreanTokenizer.DecompoundMode mode = NoriTokenizerFactory.getMode(settings);
         final UserDictionary userDictionary = NoriTokenizerFactory.getUserDictionary(env, settings);
-        final List<String> tagList = Analysis.getWordList(env, settings, "stoptags");
+        final List<String> tagList = Analysis.parseWordList(env, settings, "stoptags", s -> s);
         final Set<POS.Tag> stopTags = tagList != null ? resolvePOSList(tagList) : KoreanPartOfSpeechStopFilter.DEFAULT_STOP_TAGS;
         analyzer = new KoreanAnalyzer(userDictionary, mode, stopTags, false);
     }

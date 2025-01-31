@@ -32,29 +32,29 @@
 
 package org.opensearch.action.admin.indices.alias;
 
-import org.opensearch.LegacyESVersion;
 import org.opensearch.OpenSearchGenerationException;
 import org.opensearch.action.ActionRequestValidationException;
 import org.opensearch.action.AliasesRequest;
 import org.opensearch.action.support.IndicesOptions;
-import org.opensearch.action.support.master.AcknowledgedRequest;
+import org.opensearch.action.support.clustermanager.AcknowledgedRequest;
 import org.opensearch.cluster.metadata.AliasAction;
-import org.opensearch.common.ParseField;
-import org.opensearch.common.ParsingException;
-import org.opensearch.common.Strings;
-import org.opensearch.common.bytes.BytesArray;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.io.stream.StreamOutput;
-import org.opensearch.common.io.stream.Writeable;
-import org.opensearch.common.xcontent.ConstructingObjectParser;
-import org.opensearch.common.xcontent.ObjectParser;
-import org.opensearch.common.xcontent.ObjectParser.ValueType;
-import org.opensearch.common.xcontent.ToXContent;
-import org.opensearch.common.xcontent.ToXContentObject;
-import org.opensearch.common.xcontent.XContentBuilder;
+import org.opensearch.common.annotation.PublicApi;
 import org.opensearch.common.xcontent.XContentFactory;
-import org.opensearch.common.xcontent.XContentParser;
-import org.opensearch.common.xcontent.XContentType;
+import org.opensearch.core.ParseField;
+import org.opensearch.core.common.ParsingException;
+import org.opensearch.core.common.Strings;
+import org.opensearch.core.common.bytes.BytesArray;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.core.common.io.stream.Writeable;
+import org.opensearch.core.xcontent.ConstructingObjectParser;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
+import org.opensearch.core.xcontent.ObjectParser;
+import org.opensearch.core.xcontent.ObjectParser.ValueType;
+import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.core.xcontent.ToXContentObject;
+import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.index.query.QueryBuilder;
 
 import java.io.IOException;
@@ -67,14 +67,15 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 import static org.opensearch.action.ValidateActions.addValidationError;
-import static org.opensearch.common.xcontent.ConstructingObjectParser.optionalConstructorArg;
-import static org.opensearch.common.xcontent.ObjectParser.fromList;
+import static org.opensearch.core.xcontent.ConstructingObjectParser.optionalConstructorArg;
+import static org.opensearch.core.xcontent.ObjectParser.fromList;
 
 /**
  * A request to add/remove aliases for one or more indices.
  *
- * @opensearch.internal
+ * @opensearch.api
  */
+@PublicApi(since = "1.0.0")
 public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesRequest> implements ToXContentObject {
 
     private List<AliasActions> allAliasActions = new ArrayList<>();
@@ -96,8 +97,9 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
     /**
      * Request to take one or more actions on one or more indexes and alias combinations.
      *
-     * @opensearch.internal
+     * @opensearch.api
      */
+    @PublicApi(since = "1.0.0")
     public static class AliasActions implements AliasesRequest, Writeable, ToXContentObject {
 
         private static final ParseField INDEX = new ParseField("index");
@@ -119,8 +121,9 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
         /**
          * The type of request.
          *
-         * @opensearch.internal
+         * @opensearch.api
          */
+        @PublicApi(since = "1.0.0")
         public enum Type {
             ADD((byte) 0, AliasActions.ADD),
             REMOVE((byte) 1, AliasActions.REMOVE),
@@ -217,9 +220,11 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
             ADD_PARSER.declareField(AliasActions::searchRouting, XContentParser::text, SEARCH_ROUTING, ValueType.INT);
             ADD_PARSER.declareField(AliasActions::writeIndex, XContentParser::booleanValue, IS_WRITE_INDEX, ValueType.BOOLEAN);
             ADD_PARSER.declareField(AliasActions::isHidden, XContentParser::booleanValue, IS_HIDDEN, ValueType.BOOLEAN);
-            ADD_PARSER.declareField(AliasActions::mustExist, XContentParser::booleanValue, MUST_EXIST, ValueType.BOOLEAN);
         }
         private static final ObjectParser<AliasActions, Void> REMOVE_PARSER = parser(REMOVE.getPreferredName(), AliasActions::remove);
+        static {
+            REMOVE_PARSER.declareField(AliasActions::mustExist, XContentParser::booleanValue, MUST_EXIST, ValueType.BOOLEAN);
+        }
         private static final ObjectParser<AliasActions, Void> REMOVE_INDEX_PARSER = parser(
             REMOVE_INDEX.getPreferredName(),
             AliasActions::removeIndex
@@ -276,16 +281,9 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
             searchRouting = in.readOptionalString();
             indexRouting = in.readOptionalString();
             writeIndex = in.readOptionalBoolean();
-            // TODO fix for backport of https://github.com/elastic/elasticsearch/pull/52547
-            if (in.getVersion().onOrAfter(LegacyESVersion.V_7_7_0)) {
-                isHidden = in.readOptionalBoolean();
-            }
+            isHidden = in.readOptionalBoolean();
             originalAliases = in.readStringArray();
-            if (in.getVersion().onOrAfter(LegacyESVersion.V_7_9_0)) {
-                mustExist = in.readOptionalBoolean();
-            } else {
-                mustExist = null;
-            }
+            mustExist = in.readOptionalBoolean();
         }
 
         @Override
@@ -298,14 +296,9 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
             out.writeOptionalString(searchRouting);
             out.writeOptionalString(indexRouting);
             out.writeOptionalBoolean(writeIndex);
-            // TODO fix for backport https://github.com/elastic/elasticsearch/pull/52547
-            if (out.getVersion().onOrAfter(LegacyESVersion.V_7_7_0)) {
-                out.writeOptionalBoolean(isHidden);
-            }
+            out.writeOptionalBoolean(isHidden);
             out.writeStringArray(originalAliases);
-            if (out.getVersion().onOrAfter(LegacyESVersion.V_7_9_0)) {
-                out.writeOptionalBoolean(mustExist);
-            }
+            out.writeOptionalBoolean(mustExist);
         }
 
         /**
@@ -441,9 +434,9 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
                 return this;
             }
             try {
-                XContentBuilder builder = XContentFactory.contentBuilder(XContentType.JSON);
+                XContentBuilder builder = MediaTypeRegistry.JSON.contentBuilder();
                 builder.map(filter);
-                this.filter = Strings.toString(builder);
+                this.filter = builder.toString();
                 return this;
             } catch (IOException e) {
                 throw new OpenSearchGenerationException("Failed to generate [" + filter + "]", e);
@@ -459,7 +452,7 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
                 XContentBuilder builder = XContentFactory.jsonBuilder();
                 filter.toXContent(builder, ToXContent.EMPTY_PARAMS);
                 builder.close();
-                this.filter = Strings.toString(builder);
+                this.filter = builder.toString();
                 return this;
             } catch (IOException e) {
                 throw new OpenSearchGenerationException("Failed to build json for alias request", e);
@@ -545,7 +538,7 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
             }
             if (false == Strings.isEmpty(filter)) {
                 try (InputStream stream = new BytesArray(filter).streamInput()) {
-                    builder.rawField(FILTER.getPreferredName(), stream, XContentType.JSON);
+                    builder.rawField(FILTER.getPreferredName(), stream, MediaTypeRegistry.JSON);
                 }
             }
             if (false == Strings.isEmpty(routing)) {
@@ -562,6 +555,9 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
             }
             if (null != isHidden) {
                 builder.field(IS_HIDDEN.getPreferredName(), isHidden);
+            }
+            if (null != mustExist) {
+                builder.field(MUST_EXIST.getPreferredName(), mustExist);
             }
             builder.endObject();
             builder.endObject();
@@ -591,6 +587,8 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
                 + searchRouting
                 + ",writeIndex="
                 + writeIndex
+                + ",mustExist="
+                + mustExist
                 + "]";
         }
 
@@ -609,12 +607,13 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
                 && Objects.equals(indexRouting, other.indexRouting)
                 && Objects.equals(searchRouting, other.searchRouting)
                 && Objects.equals(writeIndex, other.writeIndex)
-                && Objects.equals(isHidden, other.isHidden);
+                && Objects.equals(isHidden, other.isHidden)
+                && Objects.equals(mustExist, other.mustExist);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(type, indices, aliases, filter, routing, indexRouting, searchRouting, writeIndex, isHidden);
+            return Objects.hash(type, indices, aliases, filter, routing, indexRouting, searchRouting, writeIndex, isHidden, mustExist);
         }
     }
 

@@ -33,6 +33,7 @@ package org.opensearch.index.engine;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.codecs.Codec;
+import org.apache.lucene.index.LeafReader;
 import org.apache.lucene.index.MergePolicy;
 import org.apache.lucene.search.QueryCache;
 import org.apache.lucene.search.QueryCachingPolicy;
@@ -40,27 +41,34 @@ import org.apache.lucene.search.ReferenceManager;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.similarities.Similarity;
 import org.opensearch.common.Nullable;
+import org.opensearch.common.annotation.PublicApi;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Setting.Property;
-import org.opensearch.common.unit.ByteSizeValue;
 import org.opensearch.common.unit.MemorySizeValue;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.core.common.unit.ByteSizeValue;
+import org.opensearch.core.index.shard.ShardId;
+import org.opensearch.core.indices.breaker.CircuitBreakerService;
 import org.opensearch.index.IndexSettings;
+import org.opensearch.index.codec.CodecAliases;
 import org.opensearch.index.codec.CodecService;
+import org.opensearch.index.codec.CodecSettings;
+import org.opensearch.index.mapper.DocumentMapperForType;
 import org.opensearch.index.mapper.ParsedDocument;
 import org.opensearch.index.seqno.RetentionLeases;
-import org.opensearch.index.shard.ShardId;
 import org.opensearch.index.store.Store;
 import org.opensearch.index.translog.InternalTranslogFactory;
 import org.opensearch.index.translog.TranslogConfig;
 import org.opensearch.index.translog.TranslogDeletionPolicyFactory;
 import org.opensearch.index.translog.TranslogFactory;
 import org.opensearch.indices.IndexingMemoryController;
-import org.opensearch.indices.breaker.CircuitBreakerService;
 import org.opensearch.threadpool.ThreadPool;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
@@ -69,8 +77,9 @@ import java.util.function.Supplier;
  * Once {@link Engine} has been created with this object, changes to this
  * object will affect the {@link Engine} instance.
  *
- * @opensearch.internal
+ * @opensearch.api
  */
+@PublicApi(since = "1.0.0")
 public final class EngineConfig {
     private final ShardId shardId;
     private final IndexSettings indexSettings;
@@ -100,6 +109,9 @@ public final class EngineConfig {
     private final LongSupplier globalCheckpointSupplier;
     private final Supplier<RetentionLeases> retentionLeasesSupplier;
     private final boolean isReadOnlyReplica;
+    private final BooleanSupplier startedPrimarySupplier;
+    private final Comparator<LeafReader> leafSorter;
+    private final Supplier<DocumentMapperForType> documentMapperForTypeSupplier;
 
     /**
      * A supplier of the outstanding retention leases. This is used during merged operations to determine which operations that have been
@@ -123,18 +135,94 @@ public final class EngineConfig {
     public static final Setting<String> INDEX_CODEC_SETTING = new Setting<>("index.codec", "default", s -> {
         switch (s) {
             case "default":
+            case "lz4":
             case "best_compression":
+            case "zlib":
             case "lucene_default":
                 return s;
             default:
-                if (Codec.availableCodecs().contains(s) == false) { // we don't error message the not officially supported ones
-                    throw new IllegalArgumentException(
-                        "unknown value for [index.codec] must be one of [default, best_compression] but was: " + s
-                    );
+                if (Codec.availableCodecs().contains(s)) {
+                    return s;
                 }
-                return s;
+
+                for (String codecName : Codec.availableCodecs()) {
+                    Codec codec = Codec.forName(codecName);
+                    if (codec instanceof CodecAliases) {
+                        CodecAliases codecWithAlias = (CodecAliases) codec;
+                        if (codecWithAlias.aliases().contains(s)) {
+                            return s;
+                        }
+                    }
+                }
+
+                throw new IllegalArgumentException(
+                    "unknown value for [index.codec] must be one of [default, lz4, best_compression, zlib] but was: " + s
+                );
         }
     }, Property.IndexScope, Property.NodeScope);
+
+    /**
+     * Index setting to change the compression level of zstd and zstd_no_dict lucene codecs.
+     * Compression Level gives a trade-off between compression ratio and speed. The higher compression level results in higher compression ratio but slower compression and decompression speeds.
+     * This setting is <b>not</b> realtime updateable.
+     */
+
+    public static final Setting<Integer> INDEX_CODEC_COMPRESSION_LEVEL_SETTING = new Setting<>(
+        "index.codec.compression_level",
+        Integer.toString(3),
+        new Setting.IntegerParser(1, 6, "index.codec.compression_level", false),
+        Property.IndexScope
+    ) {
+        @Override
+        public Set<SettingDependency> getSettingsDependencies(String key) {
+            return Set.of(new SettingDependency() {
+                @Override
+                public Setting<String> getSetting() {
+                    return INDEX_CODEC_SETTING;
+                }
+
+                @Override
+                public void validate(String key, Object value, Object dependency) {
+                    if (!(dependency instanceof String)) {
+                        throw new IllegalArgumentException("Codec should be of string type.");
+                    }
+                    doValidateCodecSettings((String) dependency);
+                }
+            });
+        }
+    };
+
+    private static void doValidateCodecSettings(final String codec) {
+        switch (codec) {
+            case "best_compression":
+            case "zlib":
+            case "lucene_default":
+            case "default":
+            case "lz4":
+                break;
+            default:
+                if (Codec.availableCodecs().contains(codec)) {
+                    Codec luceneCodec = Codec.forName(codec);
+                    if (luceneCodec instanceof CodecSettings
+                        && ((CodecSettings) luceneCodec).supports(INDEX_CODEC_COMPRESSION_LEVEL_SETTING)) {
+                        return;
+                    }
+                }
+                for (String codecName : Codec.availableCodecs()) {
+                    Codec availableCodec = Codec.forName(codecName);
+                    if (availableCodec instanceof CodecAliases) {
+                        CodecAliases availableCodecWithAlias = (CodecAliases) availableCodec;
+                        if (availableCodecWithAlias.aliases().contains(codec)) {
+                            if (availableCodec instanceof CodecSettings
+                                && ((CodecSettings) availableCodec).supports(INDEX_CODEC_COMPRESSION_LEVEL_SETTING)) {
+                                return;
+                            }
+                        }
+                    }
+                }
+        }
+        throw new IllegalArgumentException("Compression level cannot be set for the " + codec + " codec.");
+    }
 
     /**
      * Configures an index to optimize documents with auto generated ids for append only. If this setting is updated from <code>false</code>
@@ -150,162 +238,35 @@ public final class EngineConfig {
         Property.Dynamic
     );
 
+    public static final Setting<Boolean> INDEX_USE_COMPOUND_FILE = Setting.boolSetting(
+        "index.use_compound_file",
+        true,
+        Property.IndexScope
+    );
+
     private final TranslogConfig translogConfig;
 
     private final TranslogFactory translogFactory;
 
-    public EngineConfig(
-        ShardId shardId,
-        ThreadPool threadPool,
-        IndexSettings indexSettings,
-        Engine.Warmer warmer,
-        Store store,
-        MergePolicy mergePolicy,
-        Analyzer analyzer,
-        Similarity similarity,
-        CodecService codecService,
-        Engine.EventListener eventListener,
-        QueryCache queryCache,
-        QueryCachingPolicy queryCachingPolicy,
-        TranslogConfig translogConfig,
-        TimeValue flushMergesAfter,
-        List<ReferenceManager.RefreshListener> externalRefreshListener,
-        List<ReferenceManager.RefreshListener> internalRefreshListener,
-        Sort indexSort,
-        CircuitBreakerService circuitBreakerService,
-        LongSupplier globalCheckpointSupplier,
-        Supplier<RetentionLeases> retentionLeasesSupplier,
-        LongSupplier primaryTermSupplier,
-        TombstoneDocSupplier tombstoneDocSupplier
-    ) {
-        this(
-            shardId,
-            threadPool,
-            indexSettings,
-            warmer,
-            store,
-            mergePolicy,
-            analyzer,
-            similarity,
-            codecService,
-            eventListener,
-            queryCache,
-            queryCachingPolicy,
-            translogConfig,
-            null,
-            flushMergesAfter,
-            externalRefreshListener,
-            internalRefreshListener,
-            indexSort,
-            circuitBreakerService,
-            globalCheckpointSupplier,
-            retentionLeasesSupplier,
-            primaryTermSupplier,
-            tombstoneDocSupplier
-        );
-    }
-
     /**
      * Creates a new {@link org.opensearch.index.engine.EngineConfig}
      */
-    EngineConfig(
-        ShardId shardId,
-        ThreadPool threadPool,
-        IndexSettings indexSettings,
-        Engine.Warmer warmer,
-        Store store,
-        MergePolicy mergePolicy,
-        Analyzer analyzer,
-        Similarity similarity,
-        CodecService codecService,
-        Engine.EventListener eventListener,
-        QueryCache queryCache,
-        QueryCachingPolicy queryCachingPolicy,
-        TranslogConfig translogConfig,
-        TranslogDeletionPolicyFactory translogDeletionPolicyFactory,
-        TimeValue flushMergesAfter,
-        List<ReferenceManager.RefreshListener> externalRefreshListener,
-        List<ReferenceManager.RefreshListener> internalRefreshListener,
-        Sort indexSort,
-        CircuitBreakerService circuitBreakerService,
-        LongSupplier globalCheckpointSupplier,
-        Supplier<RetentionLeases> retentionLeasesSupplier,
-        LongSupplier primaryTermSupplier,
-        TombstoneDocSupplier tombstoneDocSupplier
-    ) {
-        this(
-            shardId,
-            threadPool,
-            indexSettings,
-            warmer,
-            store,
-            mergePolicy,
-            analyzer,
-            similarity,
-            codecService,
-            eventListener,
-            queryCache,
-            queryCachingPolicy,
-            translogConfig,
-            translogDeletionPolicyFactory,
-            flushMergesAfter,
-            externalRefreshListener,
-            internalRefreshListener,
-            indexSort,
-            circuitBreakerService,
-            globalCheckpointSupplier,
-            retentionLeasesSupplier,
-            primaryTermSupplier,
-            tombstoneDocSupplier,
-            false,
-            new InternalTranslogFactory()
-        );
-    }
-
-    /**
-     * Creates a new {@link org.opensearch.index.engine.EngineConfig}
-     */
-    EngineConfig(
-        ShardId shardId,
-        ThreadPool threadPool,
-        IndexSettings indexSettings,
-        Engine.Warmer warmer,
-        Store store,
-        MergePolicy mergePolicy,
-        Analyzer analyzer,
-        Similarity similarity,
-        CodecService codecService,
-        Engine.EventListener eventListener,
-        QueryCache queryCache,
-        QueryCachingPolicy queryCachingPolicy,
-        TranslogConfig translogConfig,
-        TranslogDeletionPolicyFactory translogDeletionPolicyFactory,
-        TimeValue flushMergesAfter,
-        List<ReferenceManager.RefreshListener> externalRefreshListener,
-        List<ReferenceManager.RefreshListener> internalRefreshListener,
-        Sort indexSort,
-        CircuitBreakerService circuitBreakerService,
-        LongSupplier globalCheckpointSupplier,
-        Supplier<RetentionLeases> retentionLeasesSupplier,
-        LongSupplier primaryTermSupplier,
-        TombstoneDocSupplier tombstoneDocSupplier,
-        boolean isReadOnlyReplica,
-        TranslogFactory translogFactory
-    ) {
-        if (isReadOnlyReplica && indexSettings.isSegRepEnabled() == false) {
+    private EngineConfig(Builder builder) {
+        if (builder.isReadOnlyReplica && builder.indexSettings.isSegRepEnabledOrRemoteNode() == false) {
             throw new IllegalArgumentException("Shard can only be wired as a read only replica with Segment Replication enabled");
         }
-        this.shardId = shardId;
-        this.indexSettings = indexSettings;
-        this.threadPool = threadPool;
-        this.warmer = warmer == null ? (a) -> {} : warmer;
-        this.store = store;
-        this.mergePolicy = mergePolicy;
-        this.analyzer = analyzer;
-        this.similarity = similarity;
-        this.codecService = codecService;
-        this.eventListener = eventListener;
-        codecName = indexSettings.getValue(INDEX_CODEC_SETTING);
+        this.shardId = builder.shardId;
+        this.indexSettings = builder.indexSettings;
+        this.threadPool = builder.threadPool;
+        this.warmer = builder.warmer == null ? (a) -> {} : builder.warmer;
+        this.store = builder.store;
+        this.mergePolicy = builder.mergePolicy;
+        this.analyzer = builder.analyzer;
+        this.similarity = builder.similarity;
+        this.codecService = builder.codecService;
+        this.eventListener = builder.eventListener;
+        codecName = builder.indexSettings.getValue(INDEX_CODEC_SETTING);
+
         // We need to make the indexing buffer for this shard at least as large
         // as the amount of memory that is available for all engines on the
         // local node so that decisions to flush segments to disk are made by
@@ -318,23 +279,26 @@ public final class EngineConfig {
         if (maxBufferSize != null) {
             indexingBufferSize = MemorySizeValue.parseBytesSizeValueOrHeapRatio(maxBufferSize, escapeHatchProperty);
         } else {
-            indexingBufferSize = IndexingMemoryController.INDEX_BUFFER_SIZE_SETTING.get(indexSettings.getNodeSettings());
+            indexingBufferSize = IndexingMemoryController.INDEX_BUFFER_SIZE_SETTING.get(builder.indexSettings.getNodeSettings());
         }
-        this.queryCache = queryCache;
-        this.queryCachingPolicy = queryCachingPolicy;
-        this.translogConfig = translogConfig;
-        this.translogDeletionPolicyFactory = translogDeletionPolicyFactory;
-        this.flushMergesAfter = flushMergesAfter;
-        this.externalRefreshListener = externalRefreshListener;
-        this.internalRefreshListener = internalRefreshListener;
-        this.indexSort = indexSort;
-        this.circuitBreakerService = circuitBreakerService;
-        this.globalCheckpointSupplier = globalCheckpointSupplier;
-        this.retentionLeasesSupplier = Objects.requireNonNull(retentionLeasesSupplier);
-        this.primaryTermSupplier = primaryTermSupplier;
-        this.tombstoneDocSupplier = tombstoneDocSupplier;
-        this.isReadOnlyReplica = isReadOnlyReplica;
-        this.translogFactory = translogFactory;
+        this.queryCache = builder.queryCache;
+        this.queryCachingPolicy = builder.queryCachingPolicy;
+        this.translogConfig = builder.translogConfig;
+        this.translogDeletionPolicyFactory = builder.translogDeletionPolicyFactory;
+        this.flushMergesAfter = builder.flushMergesAfter;
+        this.externalRefreshListener = builder.externalRefreshListener;
+        this.internalRefreshListener = builder.internalRefreshListener;
+        this.indexSort = builder.indexSort;
+        this.circuitBreakerService = builder.circuitBreakerService;
+        this.globalCheckpointSupplier = builder.globalCheckpointSupplier;
+        this.retentionLeasesSupplier = Objects.requireNonNull(builder.retentionLeasesSupplier);
+        this.primaryTermSupplier = builder.primaryTermSupplier;
+        this.tombstoneDocSupplier = builder.tombstoneDocSupplier;
+        this.isReadOnlyReplica = builder.isReadOnlyReplica;
+        this.startedPrimarySupplier = builder.startedPrimarySupplier;
+        this.translogFactory = builder.translogFactory;
+        this.leafSorter = builder.leafSorter;
+        this.documentMapperForTypeSupplier = builder.documentMapperForTypeSupplier;
     }
 
     /**
@@ -536,7 +500,19 @@ public final class EngineConfig {
      * @return true if this engine should be wired as read only.
      */
     public boolean isReadOnlyReplica() {
-        return indexSettings.isSegRepEnabled() && isReadOnlyReplica;
+        return indexSettings.isSegRepEnabledOrRemoteNode() && isReadOnlyReplica;
+    }
+
+    public boolean useCompoundFile() {
+        return indexSettings.getValue(INDEX_USE_COMPOUND_FILE);
+    }
+
+    /**
+     * Returns the underlying startedPrimarySupplier.
+     * @return the primary mode supplier.
+     */
+    public BooleanSupplier getStartedPrimarySupplier() {
+        return startedPrimarySupplier;
     }
 
     /**
@@ -551,8 +527,9 @@ public final class EngineConfig {
      * A supplier supplies tombstone documents which will be used in soft-update methods.
      * The returned document consists only _uid, _seqno, _term and _version fields; other metadata fields are excluded.
      *
-     * @opensearch.internal
+     * @opensearch.api
      */
+    @PublicApi(since = "1.0.0")
     public interface TombstoneDocSupplier {
         /**
          * Creates a tombstone document for a delete operation.
@@ -570,7 +547,200 @@ public final class EngineConfig {
         return tombstoneDocSupplier;
     }
 
+    public Supplier<DocumentMapperForType> getDocumentMapperForTypeSupplier() {
+        return documentMapperForTypeSupplier;
+    }
+
     public TranslogDeletionPolicyFactory getCustomTranslogDeletionPolicyFactory() {
         return translogDeletionPolicyFactory;
+    }
+
+    /**
+     * Returns subReaderSorter for org.apache.lucene.index.BaseCompositeReader.
+     * This gets used in lucene IndexReader and decides order of segment read.
+     * @return comparator
+     */
+    public Comparator<LeafReader> getLeafSorter() {
+        return this.leafSorter;
+    }
+
+    /**
+     * Builder for EngineConfig class
+     *
+     * @opensearch.internal
+     */
+    public static class Builder {
+        private ShardId shardId;
+        private ThreadPool threadPool;
+        private IndexSettings indexSettings;
+        private Engine.Warmer warmer;
+        private Store store;
+        private MergePolicy mergePolicy;
+        private Analyzer analyzer;
+        private Similarity similarity;
+        private CodecService codecService;
+        private Engine.EventListener eventListener;
+        private QueryCache queryCache;
+        private QueryCachingPolicy queryCachingPolicy;
+        private TranslogConfig translogConfig;
+        private TimeValue flushMergesAfter;
+        private List<ReferenceManager.RefreshListener> externalRefreshListener;
+        private List<ReferenceManager.RefreshListener> internalRefreshListener;
+        private Sort indexSort;
+        private CircuitBreakerService circuitBreakerService;
+        private LongSupplier globalCheckpointSupplier;
+        private Supplier<RetentionLeases> retentionLeasesSupplier;
+        private LongSupplier primaryTermSupplier;
+        private TombstoneDocSupplier tombstoneDocSupplier;
+        private TranslogDeletionPolicyFactory translogDeletionPolicyFactory;
+        private boolean isReadOnlyReplica;
+        private BooleanSupplier startedPrimarySupplier;
+        private TranslogFactory translogFactory = new InternalTranslogFactory();
+        private Supplier<DocumentMapperForType> documentMapperForTypeSupplier;
+        Comparator<LeafReader> leafSorter;
+
+        public Builder shardId(ShardId shardId) {
+            this.shardId = shardId;
+            return this;
+        }
+
+        public Builder threadPool(ThreadPool threadPool) {
+            this.threadPool = threadPool;
+            return this;
+        }
+
+        public Builder indexSettings(IndexSettings indexSettings) {
+            this.indexSettings = indexSettings;
+            return this;
+        }
+
+        public Builder warmer(Engine.Warmer warmer) {
+            this.warmer = warmer;
+            return this;
+        }
+
+        public Builder store(Store store) {
+            this.store = store;
+            return this;
+        }
+
+        public Builder mergePolicy(MergePolicy mergePolicy) {
+            this.mergePolicy = mergePolicy;
+            return this;
+        }
+
+        public Builder analyzer(Analyzer analyzer) {
+            this.analyzer = analyzer;
+            return this;
+        }
+
+        public Builder similarity(Similarity similarity) {
+            this.similarity = similarity;
+            return this;
+        }
+
+        public Builder codecService(CodecService codecService) {
+            this.codecService = codecService;
+            return this;
+        }
+
+        public Builder eventListener(Engine.EventListener eventListener) {
+            this.eventListener = eventListener;
+            return this;
+        }
+
+        public Builder queryCache(QueryCache queryCache) {
+            this.queryCache = queryCache;
+            return this;
+        }
+
+        public Builder queryCachingPolicy(QueryCachingPolicy queryCachingPolicy) {
+            this.queryCachingPolicy = queryCachingPolicy;
+            return this;
+        }
+
+        public Builder translogConfig(TranslogConfig translogConfig) {
+            this.translogConfig = translogConfig;
+            return this;
+        }
+
+        public Builder flushMergesAfter(TimeValue flushMergesAfter) {
+            this.flushMergesAfter = flushMergesAfter;
+            return this;
+        }
+
+        public Builder externalRefreshListener(List<ReferenceManager.RefreshListener> externalRefreshListener) {
+            this.externalRefreshListener = externalRefreshListener;
+            return this;
+        }
+
+        public Builder internalRefreshListener(List<ReferenceManager.RefreshListener> internalRefreshListener) {
+            this.internalRefreshListener = internalRefreshListener;
+            return this;
+        }
+
+        public Builder indexSort(Sort indexSort) {
+            this.indexSort = indexSort;
+            return this;
+        }
+
+        public Builder circuitBreakerService(CircuitBreakerService circuitBreakerService) {
+            this.circuitBreakerService = circuitBreakerService;
+            return this;
+        }
+
+        public Builder globalCheckpointSupplier(LongSupplier globalCheckpointSupplier) {
+            this.globalCheckpointSupplier = globalCheckpointSupplier;
+            return this;
+        }
+
+        public Builder retentionLeasesSupplier(Supplier<RetentionLeases> retentionLeasesSupplier) {
+            this.retentionLeasesSupplier = retentionLeasesSupplier;
+            return this;
+        }
+
+        public Builder primaryTermSupplier(LongSupplier primaryTermSupplier) {
+            this.primaryTermSupplier = primaryTermSupplier;
+            return this;
+        }
+
+        public Builder tombstoneDocSupplier(TombstoneDocSupplier tombstoneDocSupplier) {
+            this.tombstoneDocSupplier = tombstoneDocSupplier;
+            return this;
+        }
+
+        public Builder documentMapperForTypeSupplier(Supplier<DocumentMapperForType> documentMapperForTypeSupplier) {
+            this.documentMapperForTypeSupplier = documentMapperForTypeSupplier;
+            return this;
+        }
+
+        public Builder translogDeletionPolicyFactory(TranslogDeletionPolicyFactory translogDeletionPolicyFactory) {
+            this.translogDeletionPolicyFactory = translogDeletionPolicyFactory;
+            return this;
+        }
+
+        public Builder readOnlyReplica(boolean isReadOnlyReplica) {
+            this.isReadOnlyReplica = isReadOnlyReplica;
+            return this;
+        }
+
+        public Builder startedPrimarySupplier(BooleanSupplier startedPrimarySupplier) {
+            this.startedPrimarySupplier = startedPrimarySupplier;
+            return this;
+        }
+
+        public Builder translogFactory(TranslogFactory translogFactory) {
+            this.translogFactory = translogFactory;
+            return this;
+        }
+
+        public Builder leafSorter(Comparator<LeafReader> leafSorter) {
+            this.leafSorter = leafSorter;
+            return this;
+        }
+
+        public EngineConfig build() {
+            return new EngineConfig(this);
+        }
     }
 }

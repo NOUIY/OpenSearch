@@ -32,6 +32,8 @@
 
 package org.opensearch.action.admin.indices.stats;
 
+import org.opensearch.common.annotation.PublicApi;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -41,8 +43,9 @@ import java.util.Map;
 /**
  * Index Stats for OpenSearch
  *
- * @opensearch.internal
+ * @opensearch.api
  */
+@PublicApi(since = "1.0.0")
 public class IndexStats implements Iterable<IndexShardStats> {
 
     private final String index;
@@ -88,10 +91,7 @@ public class IndexStats implements Iterable<IndexShardStats> {
         for (Map.Entry<Integer, List<ShardStats>> entry : tmpIndexShards.entrySet()) {
             indexShards.put(
                 entry.getKey(),
-                new IndexShardStats(
-                    entry.getValue().get(0).getShardRouting().shardId(),
-                    entry.getValue().toArray(new ShardStats[entry.getValue().size()])
-                )
+                new IndexShardStats(entry.getValue().get(0).getShardRouting().shardId(), entry.getValue().toArray(new ShardStats[0]))
             );
         }
         return indexShards;
@@ -153,7 +153,7 @@ public class IndexStats implements Iterable<IndexShardStats> {
         }
 
         public IndexStats build() {
-            return new IndexStats(indexName, uuid, shards.toArray(new ShardStats[shards.size()]));
+            return new IndexStats(indexName, uuid, shards.toArray(new ShardStats[0]));
         }
     }
 }

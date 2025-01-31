@@ -34,7 +34,7 @@ package org.opensearch.index.query;
 
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.RegexpQuery;
-import org.opensearch.common.ParsingException;
+import org.opensearch.core.common.ParsingException;
 import org.opensearch.test.AbstractQueryTestCase;
 
 import java.io.IOException;
@@ -57,7 +57,7 @@ public class RegexpQueryBuilderTests extends AbstractQueryTestCase<RegexpQueryBu
             for (int i = 0; i < iter; i++) {
                 flags.add(randomFrom(RegexpFlag.values()));
             }
-            query.flags(flags.toArray(new RegexpFlag[flags.size()]));
+            query.flags(flags.toArray(new RegexpFlag[0]));
         }
         if (randomBoolean()) {
             query.caseInsensitive(true);

@@ -53,7 +53,7 @@ import org.opensearch.action.admin.indices.settings.put.UpdateSettingsRequest;
 import org.opensearch.action.admin.indices.shrink.ResizeType;
 import org.opensearch.action.admin.indices.template.delete.DeleteIndexTemplateRequest;
 import org.opensearch.action.admin.indices.validate.query.ValidateQueryRequest;
-import org.opensearch.action.support.master.AcknowledgedRequest;
+import org.opensearch.action.support.clustermanager.AcknowledgedRequest;
 import org.opensearch.client.indices.AnalyzeRequest;
 import org.opensearch.client.indices.CloseIndexRequest;
 import org.opensearch.client.indices.CreateDataStreamRequest;
@@ -72,11 +72,12 @@ import org.opensearch.client.indices.RandomCreateIndexGenerator;
 import org.opensearch.client.indices.ResizeRequest;
 import org.opensearch.client.indices.rollover.RolloverRequest;
 import org.opensearch.common.CheckedFunction;
-import org.opensearch.common.Strings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
-import org.opensearch.common.util.CollectionUtils;
-import org.opensearch.common.xcontent.XContentType;
+import org.opensearch.core.common.Strings;
+import org.opensearch.core.common.unit.ByteSizeValue;
+import org.opensearch.core.common.util.CollectionUtils;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
 import org.opensearch.test.OpenSearchTestCase;
 import org.junit.Assert;
 
@@ -595,6 +596,10 @@ public class IndicesRequestConvertersTests extends OpenSearchTestCase {
             clearIndicesCacheRequest.fields(RequestConvertersTests.randomIndicesNames(1, 5));
             expectedParams.put("fields", String.join(",", clearIndicesCacheRequest.fields()));
         }
+        if (OpenSearchTestCase.randomBoolean()) {
+            clearIndicesCacheRequest.fileCache(OpenSearchTestCase.randomBoolean());
+        }
+        expectedParams.put("file", Boolean.toString(clearIndicesCacheRequest.fileCache()));
 
         Request request = IndicesRequestConverters.clearCache(clearIndicesCacheRequest);
         StringJoiner endpoint = new StringJoiner("/", "/", "");
@@ -701,6 +706,8 @@ public class IndicesRequestConvertersTests extends OpenSearchTestCase {
         RequestConvertersTests.setRandomWaitForActiveShards(resizeRequest::setWaitForActiveShards, expectedParams);
         if (resizeType == ResizeType.SPLIT) {
             resizeRequest.setSettings(Settings.builder().put("index.number_of_shards", 2).build());
+        } else if (resizeType == ResizeType.SHRINK) {
+            resizeRequest.setMaxShardSize(new ByteSizeValue(randomIntBetween(1, 1000)));
         }
 
         Request request = function.apply(resizeRequest);
@@ -851,7 +858,7 @@ public class IndicesRequestConvertersTests extends OpenSearchTestCase {
                     + "\" : { \"type\" : \""
                     + OpenSearchTestCase.randomFrom("text", "keyword")
                     + "\" }}}",
-                XContentType.JSON
+                MediaTypeRegistry.JSON
             );
         }
         if (OpenSearchTestCase.randomBoolean()) {

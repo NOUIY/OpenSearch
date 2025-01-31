@@ -33,6 +33,7 @@
 package org.opensearch.env;
 
 import org.opensearch.common.SuppressForbidden;
+import org.opensearch.common.annotation.PublicApi;
 import org.opensearch.common.io.PathUtils;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Setting.Property;
@@ -56,8 +57,9 @@ import java.util.stream.Collectors;
 /**
  * The environment of where things exists.
  *
- * @opensearch.internal
+ * @opensearch.api
  */
+@PublicApi(since = "1.0.0")
 @SuppressForbidden(reason = "configures paths for the system")
 // TODO: move PathUtils to be package-private here instead of
 // public+forbidden api!
@@ -92,6 +94,8 @@ public class Environment {
     private final Path configDir;
 
     private final Path pluginsDir;
+
+    private final Path extensionsDir;
 
     private final Path modulesDir;
 
@@ -137,6 +141,7 @@ public class Environment {
         tmpDir = Objects.requireNonNull(tmpPath);
 
         pluginsDir = homeFile.resolve("plugins");
+        extensionsDir = homeFile.resolve("extensions");
 
         List<String> dataPaths = PATH_DATA_SETTING.get(settings);
         if (nodeLocalStorage) {
@@ -244,7 +249,7 @@ public class Environment {
 
     /**
      * Resolves the specified location against the list of configured repository roots
-     *
+     * <p>
      * If the specified location doesn't match any of the roots, returns null.
      */
     public Path resolveRepoFile(String location) {
@@ -254,7 +259,7 @@ public class Environment {
     /**
      * Checks if the specified URL is pointing to the local file system and if it does, resolves the specified url
      * against the list of configured repository roots
-     *
+     * <p>
      * If the specified url doesn't match any of the roots, returns null.
      */
     public URL resolveRepoURL(URL url) {

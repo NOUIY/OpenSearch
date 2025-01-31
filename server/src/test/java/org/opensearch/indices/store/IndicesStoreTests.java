@@ -38,7 +38,7 @@ import org.opensearch.cluster.routing.IndexShardRoutingTable;
 import org.opensearch.cluster.routing.ShardRoutingState;
 import org.opensearch.cluster.routing.TestShardRouting;
 import org.opensearch.cluster.routing.UnassignedInfo;
-import org.opensearch.index.shard.ShardId;
+import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.test.OpenSearchTestCase;
 import org.junit.Before;
 
@@ -56,7 +56,7 @@ public class IndicesStoreTests extends OpenSearchTestCase {
         Set<ShardRoutingState> set = new HashSet<>();
         set.addAll(Arrays.asList(ShardRoutingState.values()));
         set.remove(ShardRoutingState.STARTED);
-        NOT_STARTED_STATES = set.toArray(new ShardRoutingState[set.size()]);
+        NOT_STARTED_STATES = set.toArray(new ShardRoutingState[0]);
     }
 
     private DiscoveryNode localNode;

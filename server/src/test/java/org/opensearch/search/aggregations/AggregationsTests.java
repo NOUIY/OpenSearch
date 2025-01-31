@@ -32,16 +32,17 @@
 
 package org.opensearch.search.aggregations;
 
-import org.opensearch.common.ParsingException;
-import org.opensearch.common.bytes.BytesReference;
-import org.opensearch.common.xcontent.NamedXContentRegistry;
-import org.opensearch.common.xcontent.ToXContent;
-import org.opensearch.common.xcontent.XContent;
-import org.opensearch.common.xcontent.XContentBuilder;
 import org.opensearch.common.xcontent.XContentFactory;
-import org.opensearch.common.xcontent.XContentHelper;
-import org.opensearch.common.xcontent.XContentParser;
 import org.opensearch.common.xcontent.XContentType;
+import org.opensearch.core.common.ParsingException;
+import org.opensearch.core.common.bytes.BytesReference;
+import org.opensearch.core.xcontent.MediaType;
+import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.core.xcontent.XContent;
+import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.core.xcontent.XContentHelper;
+import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.rest.action.search.RestSearchAction;
 import org.opensearch.search.aggregations.Aggregation.CommonFields;
 import org.opensearch.search.aggregations.bucket.adjacency.InternalAdjacencyMatrixTests;
@@ -69,39 +70,39 @@ import org.opensearch.search.aggregations.bucket.terms.SignificantLongTermsTests
 import org.opensearch.search.aggregations.bucket.terms.SignificantStringTermsTests;
 import org.opensearch.search.aggregations.bucket.terms.StringRareTermsTests;
 import org.opensearch.search.aggregations.bucket.terms.StringTermsTests;
-import org.opensearch.search.aggregations.metrics.InternalExtendedStatsTests;
-import org.opensearch.search.aggregations.metrics.InternalMaxTests;
-import org.opensearch.search.aggregations.metrics.InternalMedianAbsoluteDeviationTests;
-import org.opensearch.search.aggregations.metrics.InternalMinTests;
-import org.opensearch.search.aggregations.metrics.InternalStatsBucketTests;
-import org.opensearch.search.aggregations.metrics.InternalStatsTests;
-import org.opensearch.search.aggregations.metrics.InternalSumTests;
+import org.opensearch.search.aggregations.bucket.terms.UnsignedLongTermsTests;
 import org.opensearch.search.aggregations.metrics.InternalAvgTests;
 import org.opensearch.search.aggregations.metrics.InternalCardinalityTests;
+import org.opensearch.search.aggregations.metrics.InternalExtendedStatsTests;
 import org.opensearch.search.aggregations.metrics.InternalGeoCentroidTests;
 import org.opensearch.search.aggregations.metrics.InternalHDRPercentilesRanksTests;
 import org.opensearch.search.aggregations.metrics.InternalHDRPercentilesTests;
+import org.opensearch.search.aggregations.metrics.InternalMaxTests;
+import org.opensearch.search.aggregations.metrics.InternalMedianAbsoluteDeviationTests;
+import org.opensearch.search.aggregations.metrics.InternalMinTests;
+import org.opensearch.search.aggregations.metrics.InternalScriptedMetricTests;
+import org.opensearch.search.aggregations.metrics.InternalStatsBucketTests;
+import org.opensearch.search.aggregations.metrics.InternalStatsTests;
+import org.opensearch.search.aggregations.metrics.InternalSumTests;
 import org.opensearch.search.aggregations.metrics.InternalTDigestPercentilesRanksTests;
 import org.opensearch.search.aggregations.metrics.InternalTDigestPercentilesTests;
-import org.opensearch.search.aggregations.metrics.InternalScriptedMetricTests;
 import org.opensearch.search.aggregations.metrics.InternalTopHitsTests;
 import org.opensearch.search.aggregations.metrics.InternalValueCountTests;
 import org.opensearch.search.aggregations.metrics.InternalWeightedAvgTests;
-import org.opensearch.search.aggregations.pipeline.InternalSimpleValueTests;
 import org.opensearch.search.aggregations.pipeline.InternalBucketMetricValueTests;
-import org.opensearch.search.aggregations.pipeline.InternalPercentilesBucketTests;
-import org.opensearch.search.aggregations.pipeline.InternalExtendedStatsBucketTests;
 import org.opensearch.search.aggregations.pipeline.InternalDerivativeTests;
-import org.opensearch.test.OpenSearchTestCase;
+import org.opensearch.search.aggregations.pipeline.InternalExtendedStatsBucketTests;
+import org.opensearch.search.aggregations.pipeline.InternalPercentilesBucketTests;
+import org.opensearch.search.aggregations.pipeline.InternalSimpleValueTests;
 import org.opensearch.test.InternalAggregationTestCase;
 import org.opensearch.test.InternalMultiBucketAggregationTestCase;
+import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.test.hamcrest.OpenSearchAssertions;
 import org.junit.After;
 import org.junit.Before;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -116,60 +117,57 @@ import static org.opensearch.test.XContentTestUtils.insertRandomFields;
  *
  */
 public class AggregationsTests extends OpenSearchTestCase {
-    private static final List<InternalAggregationTestCase<?>> aggsTests = getAggsTests();
-
-    private static List<InternalAggregationTestCase<?>> getAggsTests() {
-        List<InternalAggregationTestCase<?>> aggsTests = new ArrayList<>();
-        aggsTests.add(new InternalCardinalityTests());
-        aggsTests.add(new InternalTDigestPercentilesTests());
-        aggsTests.add(new InternalTDigestPercentilesRanksTests());
-        aggsTests.add(new InternalHDRPercentilesTests());
-        aggsTests.add(new InternalHDRPercentilesRanksTests());
-        aggsTests.add(new InternalPercentilesBucketTests());
-        aggsTests.add(new InternalMinTests());
-        aggsTests.add(new InternalMaxTests());
-        aggsTests.add(new InternalAvgTests());
-        aggsTests.add(new InternalWeightedAvgTests());
-        aggsTests.add(new InternalSumTests());
-        aggsTests.add(new InternalValueCountTests());
-        aggsTests.add(new InternalSimpleValueTests());
-        aggsTests.add(new InternalDerivativeTests());
-        aggsTests.add(new InternalBucketMetricValueTests());
-        aggsTests.add(new InternalStatsTests());
-        aggsTests.add(new InternalStatsBucketTests());
-        aggsTests.add(new InternalExtendedStatsTests());
-        aggsTests.add(new InternalExtendedStatsBucketTests());
-        aggsTests.add(new InternalGeoCentroidTests());
-        aggsTests.add(new InternalHistogramTests());
-        aggsTests.add(new InternalDateHistogramTests());
-        aggsTests.add(new InternalAutoDateHistogramTests());
-        aggsTests.add(new InternalVariableWidthHistogramTests());
-        aggsTests.add(new LongTermsTests());
-        aggsTests.add(new DoubleTermsTests());
-        aggsTests.add(new StringTermsTests());
-        aggsTests.add(new LongRareTermsTests());
-        aggsTests.add(new StringRareTermsTests());
-        aggsTests.add(new InternalMissingTests());
-        aggsTests.add(new InternalNestedTests());
-        aggsTests.add(new InternalReverseNestedTests());
-        aggsTests.add(new InternalGlobalTests());
-        aggsTests.add(new InternalFilterTests());
-        aggsTests.add(new InternalSamplerTests());
-        aggsTests.add(new InternalRangeTests());
-        aggsTests.add(new InternalDateRangeTests());
-        aggsTests.add(new InternalGeoDistanceTests());
-        aggsTests.add(new InternalFiltersTests());
-        aggsTests.add(new InternalAdjacencyMatrixTests());
-        aggsTests.add(new SignificantLongTermsTests());
-        aggsTests.add(new SignificantStringTermsTests());
-        aggsTests.add(new InternalScriptedMetricTests());
-        aggsTests.add(new InternalBinaryRangeTests());
-        aggsTests.add(new InternalTopHitsTests());
-        aggsTests.add(new InternalCompositeTests());
-        aggsTests.add(new InternalMedianAbsoluteDeviationTests());
-        aggsTests.add(new InternalMultiTermsTests());
-        return Collections.unmodifiableList(aggsTests);
-    }
+    private static final List<InternalAggregationTestCase<?>> aggsTests = List.of(
+        new InternalCardinalityTests(),
+        new InternalTDigestPercentilesTests(),
+        new InternalTDigestPercentilesRanksTests(),
+        new InternalHDRPercentilesTests(),
+        new InternalHDRPercentilesRanksTests(),
+        new InternalPercentilesBucketTests(),
+        new InternalMinTests(),
+        new InternalMaxTests(),
+        new InternalAvgTests(),
+        new InternalWeightedAvgTests(),
+        new InternalSumTests(),
+        new InternalValueCountTests(),
+        new InternalSimpleValueTests(),
+        new InternalDerivativeTests(),
+        new InternalBucketMetricValueTests(),
+        new InternalStatsTests(),
+        new InternalStatsBucketTests(),
+        new InternalExtendedStatsTests(),
+        new InternalExtendedStatsBucketTests(),
+        new InternalGeoCentroidTests(),
+        new InternalHistogramTests(),
+        new InternalDateHistogramTests(),
+        new InternalAutoDateHistogramTests(),
+        new InternalVariableWidthHistogramTests(),
+        new UnsignedLongTermsTests(),
+        new LongTermsTests(),
+        new DoubleTermsTests(),
+        new StringTermsTests(),
+        new LongRareTermsTests(),
+        new StringRareTermsTests(),
+        new InternalMissingTests(),
+        new InternalNestedTests(),
+        new InternalReverseNestedTests(),
+        new InternalGlobalTests(),
+        new InternalFilterTests(),
+        new InternalSamplerTests(),
+        new InternalRangeTests(),
+        new InternalDateRangeTests(),
+        new InternalGeoDistanceTests(),
+        new InternalFiltersTests(),
+        new InternalAdjacencyMatrixTests(),
+        new SignificantLongTermsTests(),
+        new SignificantStringTermsTests(),
+        new InternalScriptedMetricTests(),
+        new InternalBinaryRangeTests(),
+        new InternalTopHitsTests(),
+        new InternalCompositeTests(),
+        new InternalMedianAbsoluteDeviationTests(),
+        new InternalMultiTermsTests()
+    );
 
     @Override
     protected NamedXContentRegistry xContentRegistry() {
@@ -214,7 +212,7 @@ public class AggregationsTests extends OpenSearchTestCase {
     /**
      * Test that parsing works for a randomly created Aggregations object with a
      * randomized aggregation tree. The test randomly chooses an
-     * {@link XContentType}, randomizes the order of the {@link XContent} fields
+     * {@link MediaType}, randomizes the order of the {@link XContent} fields
      * and randomly sets the `humanReadable` flag when rendering the
      * {@link XContent}.
      *
@@ -224,10 +222,10 @@ public class AggregationsTests extends OpenSearchTestCase {
      *            responses
      */
     private void parseAndAssert(boolean addRandomFields) throws IOException {
-        XContentType xContentType = randomFrom(XContentType.values());
+        MediaType mediaType = randomFrom(XContentType.values());
         final ToXContent.Params params = new ToXContent.MapParams(singletonMap(RestSearchAction.TYPED_KEYS_PARAM, "true"));
-        Aggregations aggregations = createTestInstance();
-        BytesReference originalBytes = toShuffledXContent(aggregations, xContentType, params, randomBoolean());
+        Aggregations aggregations = createTestInstance(1, 0, 3);
+        BytesReference originalBytes = toShuffledXContent(aggregations, mediaType, params, randomBoolean());
         BytesReference mutated;
         if (addRandomFields) {
             /*
@@ -257,18 +255,18 @@ public class AggregationsTests extends OpenSearchTestCase {
                 || path.endsWith("correlation")
                 || path.contains(CommonFields.VALUE.getPreferredName())
                 || path.endsWith(CommonFields.KEY.getPreferredName())) || path.contains("top_hits");
-            mutated = insertRandomFields(xContentType, originalBytes, excludes, random());
+            mutated = insertRandomFields(mediaType, originalBytes, excludes, random());
         } else {
             mutated = originalBytes;
         }
-        try (XContentParser parser = createParser(xContentType.xContent(), mutated)) {
+        try (XContentParser parser = createParser(mediaType.xContent(), mutated)) {
             assertEquals(XContentParser.Token.START_OBJECT, parser.nextToken());
             assertEquals(XContentParser.Token.FIELD_NAME, parser.nextToken());
             assertEquals(Aggregations.AGGREGATIONS_FIELD, parser.currentName());
             assertEquals(XContentParser.Token.START_OBJECT, parser.nextToken());
             Aggregations parsedAggregations = Aggregations.fromXContent(parser);
-            BytesReference parsedBytes = XContentHelper.toXContent(parsedAggregations, xContentType, randomBoolean());
-            OpenSearchAssertions.assertToXContentEquivalent(originalBytes, parsedBytes, xContentType);
+            BytesReference parsedBytes = XContentHelper.toXContent(parsedAggregations, mediaType, randomBoolean());
+            OpenSearchAssertions.assertToXContentEquivalent(originalBytes, parsedBytes, mediaType);
         }
     }
 

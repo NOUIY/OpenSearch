@@ -32,21 +32,20 @@
 
 package org.opensearch.action.admin.indices.alias;
 
-import org.opensearch.LegacyESVersion;
 import org.opensearch.OpenSearchGenerationException;
 import org.opensearch.common.Nullable;
-import org.opensearch.common.ParseField;
-import org.opensearch.common.Strings;
-import org.opensearch.common.bytes.BytesArray;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.io.stream.StreamOutput;
-import org.opensearch.common.io.stream.Writeable;
-import org.opensearch.common.xcontent.ToXContent;
-import org.opensearch.common.xcontent.ToXContentFragment;
-import org.opensearch.common.xcontent.XContentBuilder;
-import org.opensearch.common.xcontent.XContentFactory;
-import org.opensearch.common.xcontent.XContentParser;
-import org.opensearch.common.xcontent.XContentType;
+import org.opensearch.common.annotation.PublicApi;
+import org.opensearch.core.ParseField;
+import org.opensearch.core.common.Strings;
+import org.opensearch.core.common.bytes.BytesArray;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.core.common.io.stream.Writeable;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
+import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.core.xcontent.ToXContentFragment;
+import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.index.query.QueryBuilder;
 
 import java.io.IOException;
@@ -56,8 +55,9 @@ import java.util.Map;
 /**
  * Represents an alias, to be associated with an index
  *
- * @opensearch.internal
+ * @opensearch.api
  */
+@PublicApi(since = "1.0.0")
 public class Alias implements Writeable, ToXContentFragment {
 
     private static final ParseField FILTER = new ParseField("filter");
@@ -90,11 +90,7 @@ public class Alias implements Writeable, ToXContentFragment {
         indexRouting = in.readOptionalString();
         searchRouting = in.readOptionalString();
         writeIndex = in.readOptionalBoolean();
-        if (in.getVersion().onOrAfter(LegacyESVersion.V_7_7_0)) {
-            isHidden = in.readOptionalBoolean();
-        } else {
-            isHidden = null;
-        }
+        isHidden = in.readOptionalBoolean();
     }
 
     public Alias(String name) {
@@ -132,9 +128,9 @@ public class Alias implements Writeable, ToXContentFragment {
             return this;
         }
         try {
-            XContentBuilder builder = XContentFactory.contentBuilder(XContentType.JSON);
+            XContentBuilder builder = MediaTypeRegistry.contentBuilder(MediaTypeRegistry.JSON);
             builder.map(filter);
-            this.filter = Strings.toString(builder);
+            this.filter = builder.toString();
             return this;
         } catch (IOException e) {
             throw new OpenSearchGenerationException("Failed to generate [" + filter + "]", e);
@@ -150,10 +146,10 @@ public class Alias implements Writeable, ToXContentFragment {
             return this;
         }
         try {
-            XContentBuilder builder = XContentFactory.jsonBuilder();
+            XContentBuilder builder = MediaTypeRegistry.JSON.contentBuilder();
             filterBuilder.toXContent(builder, ToXContent.EMPTY_PARAMS);
             builder.close();
-            this.filter = Strings.toString(builder);
+            this.filter = builder.toString();
             return this;
         } catch (IOException e) {
             throw new OpenSearchGenerationException("Failed to build json for alias request", e);
@@ -236,9 +232,7 @@ public class Alias implements Writeable, ToXContentFragment {
         out.writeOptionalString(indexRouting);
         out.writeOptionalString(searchRouting);
         out.writeOptionalBoolean(writeIndex);
-        if (out.getVersion().onOrAfter(LegacyESVersion.V_7_7_0)) {
-            out.writeOptionalBoolean(isHidden);
-        }
+        out.writeOptionalBoolean(isHidden);
     }
 
     /**
@@ -285,7 +279,7 @@ public class Alias implements Writeable, ToXContentFragment {
 
         if (filter != null) {
             try (InputStream stream = new BytesArray(filter).streamInput()) {
-                builder.rawField(FILTER.getPreferredName(), stream, XContentType.JSON);
+                builder.rawField(FILTER.getPreferredName(), stream, MediaTypeRegistry.JSON);
             }
         }
 
@@ -312,7 +306,7 @@ public class Alias implements Writeable, ToXContentFragment {
 
     @Override
     public String toString() {
-        return Strings.toString(this);
+        return Strings.toString(MediaTypeRegistry.JSON, this);
     }
 
     @Override

@@ -31,7 +31,6 @@
 
 package org.opensearch.upgrades;
 
-import org.opensearch.LegacyESVersion;
 import org.opensearch.Version;
 import org.opensearch.action.support.PlainActionFuture;
 import org.opensearch.client.Request;
@@ -41,16 +40,17 @@ import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.cluster.metadata.MetadataIndexStateService;
 import org.opensearch.cluster.routing.allocation.decider.EnableAllocationDecider;
 import org.opensearch.common.Booleans;
-import org.opensearch.common.Strings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.concurrent.AbstractRunnable;
+import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.common.xcontent.support.XContentMapValues;
+import org.opensearch.core.common.Strings;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
 import org.opensearch.index.IndexSettings;
 import org.opensearch.index.mapper.MapperService;
-import org.opensearch.rest.RestStatus;
+import org.opensearch.core.rest.RestStatus;
 import org.opensearch.test.rest.yaml.ObjectPath;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
-import org.hamcrest.Matcher;
 import org.hamcrest.Matchers;
 
 import java.io.IOException;
@@ -720,12 +720,8 @@ public class RecoveryIT extends AbstractRollingTestCase {
 
         final int numberOfReplicas = Integer.parseInt(
             getIndexSettingsAsMap(indexName).get(IndexMetadata.SETTING_NUMBER_OF_REPLICAS).toString());
-        if (minimumNodeVersion.onOrAfter(LegacyESVersion.V_7_6_0)) {
-            assertEquals(nodes.size() - 2, numberOfReplicas);
-            ensureGreen(indexName);
-        } else {
-            assertEquals(nodes.size() - 1, numberOfReplicas);
-        }
+        assertEquals(nodes.size() - 2, numberOfReplicas);
+        ensureGreen(indexName);
     }
 
     public void testSoftDeletesDisabledWarning() throws Exception {
@@ -738,7 +734,7 @@ public class RecoveryIT extends AbstractRollingTestCase {
                 settings.put(IndexSettings.INDEX_SOFT_DELETES_SETTING.getKey(), softDeletesEnabled);
             }
             Request request = new Request("PUT", "/" + indexName);
-            request.setJsonEntity("{\"settings\": " + Strings.toString(settings.build()) + "}");
+            request.setJsonEntity("{\"settings\": " + Strings.toString(MediaTypeRegistry.JSON, settings.build()) + "}");
             if (softDeletesEnabled == false) {
                 expectSoftDeletesWarning(request, indexName);
             }

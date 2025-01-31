@@ -33,13 +33,12 @@ package org.opensearch.action.admin.indices.datastream;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.opensearch.action.ActionListener;
 import org.opensearch.action.ActionRequestValidationException;
 import org.opensearch.action.ActionType;
 import org.opensearch.action.IndicesRequest;
 import org.opensearch.action.support.ActionFilters;
 import org.opensearch.action.support.IndicesOptions;
-import org.opensearch.action.support.master.AcknowledgedResponse;
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse;
 import org.opensearch.action.support.clustermanager.ClusterManagerNodeRequest;
 import org.opensearch.action.support.clustermanager.TransportClusterManagerNodeAction;
 import org.opensearch.cluster.ClusterState;
@@ -50,16 +49,20 @@ import org.opensearch.cluster.metadata.DataStream;
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver;
 import org.opensearch.cluster.metadata.Metadata;
 import org.opensearch.cluster.metadata.MetadataDeleteIndexService;
+import org.opensearch.cluster.service.ClusterManagerTaskKeys;
+import org.opensearch.cluster.service.ClusterManagerTaskThrottler;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.Priority;
-import org.opensearch.common.Strings;
+import org.opensearch.common.annotation.PublicApi;
 import org.opensearch.common.inject.Inject;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.io.stream.StreamOutput;
 import org.opensearch.common.regex.Regex;
 import org.opensearch.common.unit.TimeValue;
-import org.opensearch.common.util.CollectionUtils;
-import org.opensearch.index.Index;
+import org.opensearch.core.action.ActionListener;
+import org.opensearch.core.common.Strings;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.core.common.util.CollectionUtils;
+import org.opensearch.core.index.Index;
 import org.opensearch.snapshots.SnapshotInProgressException;
 import org.opensearch.snapshots.SnapshotsService;
 import org.opensearch.threadpool.ThreadPool;
@@ -76,8 +79,9 @@ import static org.opensearch.action.ValidateActions.addValidationError;
 /**
  * Transport action for deleting a datastream
  *
- * @opensearch.internal
+ * @opensearch.api
  */
+@PublicApi(since = "1.0.0")
 public class DeleteDataStreamAction extends ActionType<AcknowledgedResponse> {
 
     private static final Logger logger = LogManager.getLogger(DeleteDataStreamAction.class);
@@ -92,8 +96,9 @@ public class DeleteDataStreamAction extends ActionType<AcknowledgedResponse> {
     /**
      * Request for deleting data streams
      *
-     * @opensearch.internal
+     * @opensearch.api
      */
+    @PublicApi(since = "1.0.0")
     public static class Request extends ClusterManagerNodeRequest<Request> implements IndicesRequest.Replaceable {
 
         private String[] names;
@@ -167,6 +172,7 @@ public class DeleteDataStreamAction extends ActionType<AcknowledgedResponse> {
     public static class TransportAction extends TransportClusterManagerNodeAction<Request, AcknowledgedResponse> {
 
         private final MetadataDeleteIndexService deleteIndexService;
+        private final ClusterManagerTaskThrottler.ThrottlingKey removeDataStreamTaskKey;
 
         @Inject
         public TransportAction(
@@ -179,6 +185,8 @@ public class DeleteDataStreamAction extends ActionType<AcknowledgedResponse> {
         ) {
             super(NAME, transportService, clusterService, threadPool, actionFilters, Request::new, indexNameExpressionResolver);
             this.deleteIndexService = deleteIndexService;
+            // Task is onboarded for throttling, it will get retried from associated TransportClusterManagerNodeAction.
+            removeDataStreamTaskKey = clusterService.registerClusterManagerTask(ClusterManagerTaskKeys.REMOVE_DATA_STREAM_KEY, true);
         }
 
         @Override
@@ -206,6 +214,11 @@ public class DeleteDataStreamAction extends ActionType<AcknowledgedResponse> {
                     @Override
                     public void onFailure(String source, Exception e) {
                         listener.onFailure(e);
+                    }
+
+                    @Override
+                    public ClusterManagerTaskThrottler.ThrottlingKey getClusterManagerThrottlingKey() {
+                        return removeDataStreamTaskKey;
                     }
 
                     @Override

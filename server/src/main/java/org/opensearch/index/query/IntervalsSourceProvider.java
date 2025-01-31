@@ -39,22 +39,23 @@ import org.apache.lucene.queries.intervals.Intervals;
 import org.apache.lucene.queries.intervals.IntervalsSource;
 import org.apache.lucene.search.FuzzyQuery;
 import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.automaton.Automaton;
 import org.apache.lucene.util.automaton.CompiledAutomaton;
+import org.apache.lucene.util.automaton.Operations;
 import org.apache.lucene.util.automaton.RegExp;
-import org.opensearch.Version;
-import org.opensearch.common.ParseField;
-import org.opensearch.common.ParsingException;
-import org.opensearch.common.io.stream.NamedWriteable;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.io.stream.StreamOutput;
-import org.opensearch.common.io.stream.Writeable;
 import org.opensearch.common.unit.Fuzziness;
-import org.opensearch.common.xcontent.ConstructingObjectParser;
-import org.opensearch.common.xcontent.ObjectParser;
-import org.opensearch.common.xcontent.ToXContentFragment;
-import org.opensearch.common.xcontent.ToXContentObject;
-import org.opensearch.common.xcontent.XContentBuilder;
-import org.opensearch.common.xcontent.XContentParser;
+import org.opensearch.core.ParseField;
+import org.opensearch.core.common.ParsingException;
+import org.opensearch.core.common.io.stream.NamedWriteable;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.core.common.io.stream.Writeable;
+import org.opensearch.core.xcontent.ConstructingObjectParser;
+import org.opensearch.core.xcontent.ObjectParser;
+import org.opensearch.core.xcontent.ToXContentFragment;
+import org.opensearch.core.xcontent.ToXContentObject;
+import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.index.analysis.NamedAnalyzer;
 import org.opensearch.index.mapper.MappedFieldType;
 import org.opensearch.script.Script;
@@ -66,8 +67,8 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 
-import static org.opensearch.common.xcontent.ConstructingObjectParser.constructorArg;
-import static org.opensearch.common.xcontent.ConstructingObjectParser.optionalConstructorArg;
+import static org.opensearch.core.xcontent.ConstructingObjectParser.constructorArg;
+import static org.opensearch.core.xcontent.ConstructingObjectParser.optionalConstructorArg;
 
 /**
  * Factory class for {@link IntervalsSource}
@@ -154,15 +155,7 @@ public abstract class IntervalsSourceProvider implements NamedWriteable, ToXCont
         public Match(StreamInput in) throws IOException {
             this.query = in.readString();
             this.maxGaps = in.readVInt();
-            if (in.getVersion().onOrAfter(Version.V_1_3_0)) {
-                this.mode = IntervalMode.readFromStream(in);
-            } else {
-                if (in.readBoolean()) {
-                    this.mode = IntervalMode.ORDERED;
-                } else {
-                    this.mode = IntervalMode.UNORDERED;
-                }
-            }
+            this.mode = IntervalMode.readFromStream(in);
             this.analyzer = in.readOptionalString();
             this.filter = in.readOptionalWriteable(IntervalFilter::new);
             this.useField = in.readOptionalString();
@@ -222,11 +215,7 @@ public abstract class IntervalsSourceProvider implements NamedWriteable, ToXCont
         public void writeTo(StreamOutput out) throws IOException {
             out.writeString(query);
             out.writeVInt(maxGaps);
-            if (out.getVersion().onOrAfter(Version.V_1_3_0)) {
-                mode.writeTo(out);
-            } else {
-                out.writeBoolean(mode == IntervalMode.ORDERED);
-            }
+            mode.writeTo(out);
             out.writeOptionalString(analyzer);
             out.writeOptionalWriteable(filter);
             out.writeOptionalString(useField);
@@ -442,11 +431,7 @@ public abstract class IntervalsSourceProvider implements NamedWriteable, ToXCont
         }
 
         public Combine(StreamInput in) throws IOException {
-            if (in.getVersion().onOrAfter(Version.V_1_3_0)) {
-                this.mode = IntervalMode.readFromStream(in);
-            } else {
-                this.mode = in.readBoolean() ? IntervalMode.ORDERED : IntervalMode.UNORDERED;
-            }
+            this.mode = IntervalMode.readFromStream(in);
             this.subSources = in.readNamedWriteableList(IntervalsSourceProvider.class);
             this.maxGaps = in.readInt();
             this.filter = in.readOptionalWriteable(IntervalFilter::new);
@@ -495,11 +480,7 @@ public abstract class IntervalsSourceProvider implements NamedWriteable, ToXCont
 
         @Override
         public void writeTo(StreamOutput out) throws IOException {
-            if (out.getVersion().onOrAfter(Version.V_1_3_0)) {
-                mode.writeTo(out);
-            } else {
-                out.writeBoolean(mode == IntervalMode.ORDERED);
-            }
+            mode.writeTo(out);
             out.writeNamedWriteableList(subSources);
             out.writeInt(maxGaps);
             out.writeOptionalWriteable(filter);
@@ -712,7 +693,7 @@ public abstract class IntervalsSourceProvider implements NamedWriteable, ToXCont
 
         /**
          * Constructor
-         *
+         * <p>
          * {@code flags} is Lucene's <a href="https://github.com/apache/lucene/blob/main/lucene/core/src/java/org/apache/lucene/util/automaton/RegExp.java#L391-L411">syntax flags</a>
          * and {@code caseInsensitive} enables Lucene's only <a href="https://github.com/apache/lucene/blob/main/lucene/core/src/java/org/apache/lucene/util/automaton/RegExp.java#L416">matching flag</a>.
          */
@@ -729,11 +710,7 @@ public abstract class IntervalsSourceProvider implements NamedWriteable, ToXCont
             this.flags = in.readVInt();
             this.useField = in.readOptionalString();
             this.maxExpansions = in.readOptionalVInt();
-            if (in.getVersion().onOrAfter(Version.V_1_3_0)) {
-                this.caseInsensitive = in.readBoolean();
-            } else {
-                this.caseInsensitive = false;
-            }
+            this.caseInsensitive = in.readBoolean();
         }
 
         @Override
@@ -743,7 +720,8 @@ public abstract class IntervalsSourceProvider implements NamedWriteable, ToXCont
                 flags,
                 caseInsensitive ? RegExp.ASCII_CASE_INSENSITIVE : 0
             );
-            final CompiledAutomaton automaton = new CompiledAutomaton(regexp.toAutomaton());
+            final Automaton automaton = Operations.determinize(regexp.toAutomaton(), Operations.DEFAULT_DETERMINIZE_WORK_LIMIT);
+            final CompiledAutomaton compiledAutomaton = new CompiledAutomaton(automaton);
 
             if (useField != null) {
                 fieldType = context.fieldMapper(useField);
@@ -751,14 +729,14 @@ public abstract class IntervalsSourceProvider implements NamedWriteable, ToXCont
                 checkPositions(fieldType);
 
                 IntervalsSource regexpSource = maxExpansions == null
-                    ? Intervals.multiterm(automaton, regexp.toString())
-                    : Intervals.multiterm(automaton, maxExpansions, regexp.toString());
+                    ? Intervals.multiterm(compiledAutomaton, regexp.toString())
+                    : Intervals.multiterm(compiledAutomaton, maxExpansions, regexp.toString());
                 return Intervals.fixField(useField, regexpSource);
             } else {
                 checkPositions(fieldType);
                 return maxExpansions == null
-                    ? Intervals.multiterm(automaton, regexp.toString())
-                    : Intervals.multiterm(automaton, maxExpansions, regexp.toString());
+                    ? Intervals.multiterm(compiledAutomaton, regexp.toString())
+                    : Intervals.multiterm(compiledAutomaton, maxExpansions, regexp.toString());
             }
         }
 
@@ -803,9 +781,7 @@ public abstract class IntervalsSourceProvider implements NamedWriteable, ToXCont
             out.writeVInt(flags);
             out.writeOptionalString(useField);
             out.writeOptionalVInt(maxExpansions);
-            if (out.getVersion().onOrAfter(Version.V_1_3_0)) {
-                out.writeBoolean(caseInsensitive);
-            }
+            out.writeBoolean(caseInsensitive);
         }
 
         @Override
@@ -903,11 +879,7 @@ public abstract class IntervalsSourceProvider implements NamedWriteable, ToXCont
             this.pattern = in.readString();
             this.analyzer = in.readOptionalString();
             this.useField = in.readOptionalString();
-            if (in.getVersion().onOrAfter(Version.V_1_3_0)) {
-                this.maxExpansions = in.readOptionalVInt();
-            } else {
-                this.maxExpansions = null;
-            }
+            this.maxExpansions = in.readOptionalVInt();
         }
 
         @Override
@@ -976,9 +948,7 @@ public abstract class IntervalsSourceProvider implements NamedWriteable, ToXCont
             out.writeString(pattern);
             out.writeOptionalString(analyzer);
             out.writeOptionalString(useField);
-            if (out.getVersion().onOrAfter(Version.V_1_3_0)) {
-                out.writeOptionalVInt(maxExpansions);
-            }
+            out.writeOptionalVInt(maxExpansions);
         }
 
         @Override

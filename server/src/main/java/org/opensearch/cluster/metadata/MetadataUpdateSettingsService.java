@@ -36,7 +36,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.ExceptionsHelper;
 import org.opensearch.Version;
-import org.opensearch.action.ActionListener;
 import org.opensearch.action.admin.indices.settings.put.UpdateSettingsClusterStateUpdateRequest;
 import org.opensearch.action.admin.indices.upgrade.post.UpgradeSettingsClusterStateUpdateRequest;
 import org.opensearch.cluster.AckedClusterStateUpdateTask;
@@ -47,6 +46,8 @@ import org.opensearch.cluster.block.ClusterBlocks;
 import org.opensearch.cluster.routing.RoutingTable;
 import org.opensearch.cluster.routing.allocation.AllocationService;
 import org.opensearch.cluster.routing.allocation.AwarenessReplicaBalance;
+import org.opensearch.cluster.service.ClusterManagerTaskKeys;
+import org.opensearch.cluster.service.ClusterManagerTaskThrottler;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.Priority;
 import org.opensearch.common.ValidationException;
@@ -56,21 +57,33 @@ import org.opensearch.common.regex.Regex;
 import org.opensearch.common.settings.IndexScopedSettings;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
-import org.opensearch.index.Index;
+import org.opensearch.common.util.FeatureFlags;
+import org.opensearch.core.action.ActionListener;
+import org.opensearch.core.index.Index;
 import org.opensearch.index.IndexSettings;
 import org.opensearch.indices.IndicesService;
 import org.opensearch.indices.ShardLimitValidator;
 import org.opensearch.threadpool.ThreadPool;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
 import static org.opensearch.action.support.ContextPreservingActionListener.wrapPreservingContext;
+import static org.opensearch.cluster.metadata.IndexMetadata.SETTING_NUMBER_OF_SEARCH_REPLICAS;
+import static org.opensearch.cluster.metadata.IndexMetadata.SETTING_REMOTE_STORE_ENABLED;
+import static org.opensearch.cluster.metadata.MetadataCreateIndexService.validateOverlap;
+import static org.opensearch.cluster.metadata.MetadataCreateIndexService.validateRefreshIntervalSettings;
+import static org.opensearch.cluster.metadata.MetadataCreateIndexService.validateTranslogDurabilitySettings;
+import static org.opensearch.cluster.metadata.MetadataCreateIndexService.validateTranslogFlushIntervalSettingsForCompositeIndex;
+import static org.opensearch.cluster.metadata.MetadataIndexTemplateService.findComponentTemplate;
+import static org.opensearch.common.settings.AbstractScopedSettings.ARCHIVED_SETTINGS_PREFIX;
 import static org.opensearch.index.IndexSettings.same;
 
 /**
@@ -89,6 +102,7 @@ public class MetadataUpdateSettingsService {
     private final IndicesService indicesService;
     private final ShardLimitValidator shardLimitValidator;
     private final ThreadPool threadPool;
+    private final ClusterManagerTaskThrottler.ThrottlingKey updateSettingsTaskKey;
 
     private AwarenessReplicaBalance awarenessReplicaBalance;
 
@@ -109,6 +123,9 @@ public class MetadataUpdateSettingsService {
         this.indicesService = indicesService;
         this.shardLimitValidator = shardLimitValidator;
         this.awarenessReplicaBalance = awarenessReplicaBalance;
+
+        // Task is onboarded for throttling, it will get retried from associated TransportClusterManagerNodeAction.
+        updateSettingsTaskKey = clusterService.registerClusterManagerTask(ClusterManagerTaskKeys.UPDATE_SETTINGS_KEY, true);
     }
 
     public void updateSettings(
@@ -119,6 +136,11 @@ public class MetadataUpdateSettingsService {
             .put(request.settings())
             .normalizePrefix(IndexMetadata.INDEX_SETTING_PREFIX)
             .build();
+
+        validateRefreshIntervalSettings(normalizedSettings, clusterService.getClusterSettings());
+        validateTranslogDurabilitySettings(normalizedSettings, clusterService.getClusterSettings(), clusterService.getSettings());
+        final int defaultReplicaCount = clusterService.getClusterSettings().get(Metadata.DEFAULT_REPLICA_COUNT_SETTING);
+
         Settings.Builder settingsForClosedIndices = Settings.builder();
         Settings.Builder settingsForOpenIndices = Settings.builder();
         final Set<String> skippedSettings = new HashSet<>();
@@ -126,12 +148,16 @@ public class MetadataUpdateSettingsService {
         indexScopedSettings.validate(
             normalizedSettings.filter(s -> Regex.isSimpleMatchPattern(s) == false), // don't validate wildcards
             false, // don't validate dependencies here we check it below never allow to change the number of shards
+            false,
+            true, // Ignore archived setting.
             true
         ); // validate internal or private index settings
         for (String key : normalizedSettings.keySet()) {
             Setting setting = indexScopedSettings.get(key);
             boolean isWildcard = setting == null && Regex.isSimpleMatchPattern(key);
+            boolean isArchived = key.startsWith(ARCHIVED_SETTINGS_PREFIX);
             assert setting != null // we already validated the normalized settings
+                || isArchived
                 || (isWildcard && normalizedSettings.hasValue(key) == false) : "unknown setting: "
                     + key
                     + " isWildcard: "
@@ -139,7 +165,8 @@ public class MetadataUpdateSettingsService {
                     + " hasValue: "
                     + normalizedSettings.hasValue(key);
             settingsForClosedIndices.copy(key, normalizedSettings);
-            if (isWildcard || setting.isDynamic()) {
+            // Only allow dynamic settings and wildcards for open indices. Skip archived settings.
+            if (isArchived == false && (isWildcard || setting.isDynamic())) {
                 settingsForOpenIndices.copy(key, normalizedSettings);
             } else {
                 skippedSettings.add(key);
@@ -163,6 +190,11 @@ public class MetadataUpdateSettingsService {
                 }
 
                 @Override
+                public ClusterManagerTaskThrottler.ThrottlingKey getClusterManagerThrottlingKey() {
+                    return updateSettingsTaskKey;
+                }
+
+                @Override
                 public ClusterState execute(ClusterState currentState) {
 
                     RoutingTable.Builder routingTableBuilder = RoutingTable.builder(currentState.routingTable());
@@ -173,6 +205,7 @@ public class MetadataUpdateSettingsService {
                     Set<Index> openIndices = new HashSet<>();
                     Set<Index> closeIndices = new HashSet<>();
                     final String[] actualIndices = new String[request.indices().length];
+                    final List<String> validationErrors = new ArrayList<>();
                     for (int i = 0; i < request.indices().length; i++) {
                         Index index = request.indices()[i];
                         actualIndices[i] = index.getName();
@@ -182,6 +215,25 @@ public class MetadataUpdateSettingsService {
                         } else {
                             closeIndices.add(index);
                         }
+                        if (metadata.context() != null) {
+                            validateOverlap(
+                                normalizedSettings.keySet(),
+                                findComponentTemplate(currentState.metadata(), metadata.context()).template().settings(),
+                                index.getName()
+                            ).ifPresent(validationErrors::add);
+                        }
+                        validateTranslogFlushIntervalSettingsForCompositeIndex(
+                            normalizedSettings,
+                            clusterService.getClusterSettings(),
+                            metadata.getSettings()
+                        ).ifPresent(validationErrors::add);
+
+                    }
+
+                    if (validationErrors.size() > 0) {
+                        ValidationException exception = new ValidationException();
+                        exception.addValidationErrors(validationErrors);
+                        throw exception;
                     }
 
                     if (!skippedSettings.isEmpty() && !openIndices.isEmpty()) {
@@ -196,12 +248,19 @@ public class MetadataUpdateSettingsService {
                     }
 
                     if (IndexMetadata.INDEX_NUMBER_OF_REPLICAS_SETTING.exists(openSettings)) {
-                        final int updatedNumberOfReplicas = IndexMetadata.INDEX_NUMBER_OF_REPLICAS_SETTING.get(openSettings);
+                        final int updatedNumberOfReplicas = openSettings.getAsInt(
+                            IndexMetadata.SETTING_NUMBER_OF_REPLICAS,
+                            defaultReplicaCount
+                        );
                         if (preserveExisting == false) {
                             for (Index index : request.indices()) {
                                 if (index.getName().charAt(0) != '.') {
                                     // No replica count validation for system indices
-                                    Optional<String> error = awarenessReplicaBalance.validate(updatedNumberOfReplicas);
+                                    Optional<String> error = awarenessReplicaBalance.validate(
+                                        updatedNumberOfReplicas,
+                                        AutoExpandReplicas.SETTING.get(openSettings)
+                                    );
+
                                     if (error.isPresent()) {
                                         ValidationException ex = new ValidationException();
                                         ex.addValidationError(error.get());
@@ -233,6 +292,34 @@ public class MetadataUpdateSettingsService {
                         }
                     }
 
+                    if (IndexMetadata.INDEX_NUMBER_OF_SEARCH_REPLICAS_SETTING.exists(openSettings)) {
+                        if (FeatureFlags.isEnabled(FeatureFlags.READER_WRITER_SPLIT_EXPERIMENTAL_SETTING)) {
+                            validateSearchReplicaCountSettings(normalizedSettings, request.indices(), currentState);
+                        }
+                        final int updatedNumberOfSearchReplicas = IndexMetadata.INDEX_NUMBER_OF_SEARCH_REPLICAS_SETTING.get(openSettings);
+                        if (preserveExisting == false) {
+                            // TODO: Honor awareness validation to search replicas.
+
+                            // Verify that this won't take us over the cluster shard limit.
+                            int totalNewShards = Arrays.stream(request.indices())
+                                .mapToInt(i -> getTotalNewShards(i, currentState, updatedNumberOfSearchReplicas))
+                                .sum();
+                            Optional<String> error = shardLimitValidator.checkShardLimit(totalNewShards, currentState);
+                            if (error.isPresent()) {
+                                ValidationException ex = new ValidationException();
+                                ex.addValidationError(error.get());
+                                throw ex;
+                            }
+                            routingTableBuilder.updateNumberOfSearchReplicas(updatedNumberOfSearchReplicas, actualIndices);
+                            metadataBuilder.updateNumberOfSearchReplicas(updatedNumberOfSearchReplicas, actualIndices);
+                            logger.info(
+                                "updating number_of_Search Replicas to [{}] for indices {}",
+                                updatedNumberOfSearchReplicas,
+                                actualIndices
+                            );
+                        }
+                    }
+
                     if (!openIndices.isEmpty()) {
                         for (Index index : openIndices) {
                             IndexMetadata indexMetadata = metadataBuilder.getSafe(index);
@@ -245,15 +332,13 @@ public class MetadataUpdateSettingsService {
                                 /*
                                  * The setting index.number_of_replicas is special; we require that this setting has a value in the index. When
                                  * creating the index, we ensure this by explicitly providing a value for the setting to the default (one) if
-                                 * there is a not value provided on the source of the index creation. A user can update this setting though,
-                                 * including updating it to null, indicating that they want to use the default value. In this case, we again
-                                 * have to provide an explicit value for the setting to the default (one).
+                                 * there is no value provided on the source of the index creation or "cluster.default_number_of_replicas" is
+                                 * not set. A user can update this setting though, including updating it to null, indicating that they want to
+                                 * use the value configured by cluster settings or a default value 1. In this case, we again have to provide
+                                 * an explicit value for the setting.
                                  */
                                 if (IndexMetadata.INDEX_NUMBER_OF_REPLICAS_SETTING.exists(indexSettings) == false) {
-                                    indexSettings.put(
-                                        IndexMetadata.SETTING_NUMBER_OF_REPLICAS,
-                                        IndexMetadata.INDEX_NUMBER_OF_REPLICAS_SETTING.get(Settings.EMPTY)
-                                    );
+                                    indexSettings.put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, defaultReplicaCount);
                                 }
                                 Settings finalSettings = indexSettings.build();
                                 indexScopedSettings.validate(
@@ -290,6 +375,8 @@ public class MetadataUpdateSettingsService {
                                 Settings finalSettings = indexSettings.build();
                                 indexScopedSettings.validate(
                                     finalSettings.filter(k -> indexScopedSettings.isPrivateSetting(k) == false),
+                                    true,
+                                    false,
                                     true
                                 );
                                 metadataBuilder.put(IndexMetadata.builder(indexMetadata).settings(finalSettings));
@@ -332,7 +419,6 @@ public class MetadataUpdateSettingsService {
                         .routingTable(routingTableBuilder.build())
                         .blocks(blocks)
                         .build();
-
                     // now, reroute in case things change that require it (like number of replicas)
                     updatedState = allocationService.reroute(updatedState, "settings update");
                     try {
@@ -439,5 +525,26 @@ public class MetadataUpdateSettingsService {
                 }
             }
         );
+    }
+
+    /**
+     * Validates that if we are trying to update search replica count the index is segrep enabled.
+     *
+     * @param requestSettings {@link Settings}
+     * @param indices indices that are changing
+     * @param currentState {@link ClusterState} current cluster state
+     */
+    private void validateSearchReplicaCountSettings(Settings requestSettings, Index[] indices, ClusterState currentState) {
+        final int updatedNumberOfSearchReplicas = IndexMetadata.INDEX_NUMBER_OF_SEARCH_REPLICAS_SETTING.get(requestSettings);
+        if (updatedNumberOfSearchReplicas > 0) {
+            if (Arrays.stream(indices)
+                .allMatch(
+                    index -> currentState.metadata().index(index.getName()).getSettings().getAsBoolean(SETTING_REMOTE_STORE_ENABLED, false)
+                ) == false) {
+                throw new IllegalArgumentException(
+                    "To set " + SETTING_NUMBER_OF_SEARCH_REPLICAS + ", " + SETTING_REMOTE_STORE_ENABLED + " must be set to true"
+                );
+            }
+        }
     }
 }

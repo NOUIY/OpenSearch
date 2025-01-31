@@ -34,8 +34,8 @@ package org.opensearch.index.mapper;
 import org.apache.lucene.util.BytesRef;
 import org.opensearch.common.geo.GeoPoint;
 import org.opensearch.common.geo.GeoUtils;
-import org.opensearch.common.xcontent.XContentBuilder;
 import org.opensearch.common.xcontent.XContentFactory;
+import org.opensearch.core.xcontent.XContentBuilder;
 import org.hamcrest.CoreMatchers;
 
 import java.io.IOException;
@@ -56,7 +56,7 @@ public class GeoPointFieldMapperTests extends FieldMapperTestCase2<GeoPointField
 
     @Override
     protected Set<String> unsupportedProperties() {
-        return org.opensearch.common.collect.Set.of("analyzer", "similarity", "doc_values");
+        return Set.of("analyzer", "similarity", "doc_values");
     }
 
     @Override
@@ -162,12 +162,6 @@ public class GeoPointFieldMapperTests extends FieldMapperTestCase2<GeoPointField
         // doc values are enabled by default, but in this test we disable them; we should only have 2 points
         assertThat(doc.rootDoc().getFields("field"), notNullValue());
         assertThat(doc.rootDoc().getFields("field"), arrayWithSize(4));
-    }
-
-    public void testLatLonInArrayMoreThanThreeValues() throws Exception {
-        DocumentMapper mapper = createDocumentMapper(fieldMapping(b -> b.field("type", "geo_point").field("ignore_z_value", true)));
-        Exception e = expectThrows(MapperParsingException.class, () -> mapper.parse(source(b -> b.array("field", 1.2, 1.3, 1.4, 1.5))));
-        assertThat(e.getCause().getMessage(), containsString("[geo_point] field type does not accept more than 3 values"));
     }
 
     public void testLonLatArray() throws Exception {

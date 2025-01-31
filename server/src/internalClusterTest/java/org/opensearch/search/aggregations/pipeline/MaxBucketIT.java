@@ -32,13 +32,16 @@
 
 package org.opensearch.search.aggregations.pipeline;
 
+import com.carrotsearch.randomizedtesting.annotations.ParametersFactory;
+
 import org.opensearch.action.index.IndexRequestBuilder;
 import org.opensearch.action.search.SearchResponse;
 import org.opensearch.action.support.WriteRequest;
-import org.opensearch.common.bytes.BytesReference;
-import org.opensearch.common.xcontent.XContentBuilder;
+import org.opensearch.common.settings.Settings;
 import org.opensearch.common.xcontent.XContentHelper;
-import org.opensearch.common.xcontent.XContentType;
+import org.opensearch.core.common.bytes.BytesReference;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
+import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.search.aggregations.AggregationBuilders;
 import org.opensearch.search.aggregations.BucketOrder;
 import org.opensearch.search.aggregations.PipelineAggregatorBuilders;
@@ -54,12 +57,19 @@ import org.opensearch.search.aggregations.metrics.Sum;
 import org.opensearch.search.aggregations.metrics.SumAggregationBuilder;
 import org.opensearch.search.aggregations.pipeline.BucketHelpers.GapPolicy;
 import org.opensearch.test.OpenSearchIntegTestCase;
+import org.opensearch.test.ParameterizedStaticSettingsOpenSearchIntegTestCase;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 
 import static org.opensearch.common.xcontent.XContentFactory.jsonBuilder;
 import static org.opensearch.index.query.QueryBuilders.termQuery;
+import static org.opensearch.search.SearchService.CLUSTER_CONCURRENT_SEGMENT_SEARCH_MODE;
+import static org.opensearch.search.SearchService.CONCURRENT_SEGMENT_SEARCH_MODE_ALL;
+import static org.opensearch.search.SearchService.CONCURRENT_SEGMENT_SEARCH_MODE_AUTO;
+import static org.opensearch.search.SearchService.CONCURRENT_SEGMENT_SEARCH_MODE_NONE;
 import static org.opensearch.search.aggregations.AggregationBuilders.filter;
 import static org.opensearch.search.aggregations.AggregationBuilders.histogram;
 import static org.opensearch.search.aggregations.AggregationBuilders.sum;
@@ -72,7 +82,7 @@ import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.core.IsNull.notNullValue;
 
 @OpenSearchIntegTestCase.SuiteScopeTestCase
-public class MaxBucketIT extends OpenSearchIntegTestCase {
+public class MaxBucketIT extends ParameterizedStaticSettingsOpenSearchIntegTestCase {
 
     private static final String SINGLE_VALUED_FIELD_NAME = "l_value";
 
@@ -82,6 +92,22 @@ public class MaxBucketIT extends OpenSearchIntegTestCase {
     static int maxRandomValue;
     static int numValueBuckets;
     static long[] valueCounts;
+
+    public MaxBucketIT(Settings staticSettings) {
+        super(staticSettings);
+    }
+
+    @ParametersFactory
+    public static Collection<Object[]> parameters() {
+        return Arrays.asList(
+            new Object[] {
+                Settings.builder().put(CLUSTER_CONCURRENT_SEGMENT_SEARCH_MODE.getKey(), CONCURRENT_SEGMENT_SEARCH_MODE_ALL).build() },
+            new Object[] {
+                Settings.builder().put(CLUSTER_CONCURRENT_SEGMENT_SEARCH_MODE.getKey(), CONCURRENT_SEGMENT_SEARCH_MODE_AUTO).build() },
+            new Object[] {
+                Settings.builder().put(CLUSTER_CONCURRENT_SEGMENT_SEARCH_MODE.getKey(), CONCURRENT_SEGMENT_SEARCH_MODE_NONE).build() }
+        );
+    }
 
     @Override
     public void setupSuiteScopeCluster() throws Exception {
@@ -162,7 +188,7 @@ public class MaxBucketIT extends OpenSearchIntegTestCase {
         assertThat(maxBucketValue, notNullValue());
         assertThat(maxBucketValue.getName(), equalTo("max_bucket"));
         assertThat(maxBucketValue.value(), equalTo(maxValue));
-        assertThat(maxBucketValue.keys(), equalTo(maxKeys.toArray(new String[maxKeys.size()])));
+        assertThat(maxBucketValue.keys(), equalTo(maxKeys.toArray(new String[0])));
     }
 
     public void testDocCountAsSubAgg() throws Exception {
@@ -214,7 +240,7 @@ public class MaxBucketIT extends OpenSearchIntegTestCase {
             assertThat(maxBucketValue, notNullValue());
             assertThat(maxBucketValue.getName(), equalTo("max_bucket"));
             assertThat(maxBucketValue.value(), equalTo(maxValue));
-            assertThat(maxBucketValue.keys(), equalTo(maxKeys.toArray(new String[maxKeys.size()])));
+            assertThat(maxBucketValue.keys(), equalTo(maxKeys.toArray(new String[0])));
         }
     }
 
@@ -254,7 +280,7 @@ public class MaxBucketIT extends OpenSearchIntegTestCase {
         assertThat(maxBucketValue, notNullValue());
         assertThat(maxBucketValue.getName(), equalTo("max_bucket"));
         assertThat(maxBucketValue.value(), equalTo(maxValue));
-        assertThat(maxBucketValue.keys(), equalTo(maxKeys.toArray(new String[maxKeys.size()])));
+        assertThat(maxBucketValue.keys(), equalTo(maxKeys.toArray(new String[0])));
     }
 
     public void testMetricAsSubAgg() throws Exception {
@@ -313,7 +339,7 @@ public class MaxBucketIT extends OpenSearchIntegTestCase {
             assertThat(maxBucketValue, notNullValue());
             assertThat(maxBucketValue.getName(), equalTo("max_bucket"));
             assertThat(maxBucketValue.value(), equalTo(maxValue));
-            assertThat(maxBucketValue.keys(), equalTo(maxKeys.toArray(new String[maxKeys.size()])));
+            assertThat(maxBucketValue.keys(), equalTo(maxKeys.toArray(new String[0])));
         }
     }
 
@@ -362,7 +388,7 @@ public class MaxBucketIT extends OpenSearchIntegTestCase {
         assertThat(maxBucketValue, notNullValue());
         assertThat(maxBucketValue.getName(), equalTo("max_bucket"));
         assertThat(maxBucketValue.value(), equalTo(maxValue));
-        assertThat(maxBucketValue.keys(), equalTo(maxKeys.toArray(new String[maxKeys.size()])));
+        assertThat(maxBucketValue.keys(), equalTo(maxKeys.toArray(new String[0])));
     }
 
     public void testMetricAsSubAggWithInsertZeros() throws Exception {
@@ -419,7 +445,7 @@ public class MaxBucketIT extends OpenSearchIntegTestCase {
             assertThat(maxBucketValue, notNullValue());
             assertThat(maxBucketValue.getName(), equalTo("max_bucket"));
             assertThat(maxBucketValue.value(), equalTo(maxValue));
-            assertThat(maxBucketValue.keys(), equalTo(maxKeys.toArray(new String[maxKeys.size()])));
+            assertThat(maxBucketValue.keys(), equalTo(maxKeys.toArray(new String[0])));
         }
     }
 
@@ -500,7 +526,7 @@ public class MaxBucketIT extends OpenSearchIntegTestCase {
             assertThat(maxBucketValue, notNullValue());
             assertThat(maxBucketValue.getName(), equalTo("max_histo_bucket"));
             assertThat(maxBucketValue.value(), equalTo(maxHistoValue));
-            assertThat(maxBucketValue.keys(), equalTo(maxHistoKeys.toArray(new String[maxHistoKeys.size()])));
+            assertThat(maxBucketValue.keys(), equalTo(maxHistoKeys.toArray(new String[0])));
             if (maxHistoValue > maxTermsValue) {
                 maxTermsValue = maxHistoValue;
                 maxTermsKeys = new ArrayList<>();
@@ -514,18 +540,18 @@ public class MaxBucketIT extends OpenSearchIntegTestCase {
         assertThat(maxBucketValue, notNullValue());
         assertThat(maxBucketValue.getName(), equalTo("max_terms_bucket"));
         assertThat(maxBucketValue.value(), equalTo(maxTermsValue));
-        assertThat(maxBucketValue.keys(), equalTo(maxTermsKeys.toArray(new String[maxTermsKeys.size()])));
+        assertThat(maxBucketValue.keys(), equalTo(maxTermsKeys.toArray(new String[0])));
     }
 
     /**
      * https://github.com/elastic/elasticsearch/issues/33514
-     *
+     * <p>
      * This bug manifests as the max_bucket agg ("peak") being added to the response twice, because
      * the pipeline agg is run twice.  This makes invalid JSON and breaks conversion to maps.
      * The bug was caused by an UnmappedTerms being the chosen as the first reduction target.  UnmappedTerms
      * delegated reduction to the first non-unmapped agg, which would reduce and run pipeline aggs.  But then
      * execution returns to the UnmappedTerms and _it_ runs pipelines as well, doubling up on the values.
-     *
+     * <p>
      * Applies to any pipeline agg, not just max.
      */
     public void testFieldIsntWrittenOutTwice() throws Exception {
@@ -585,7 +611,8 @@ public class MaxBucketIT extends OpenSearchIntegTestCase {
         groupByLicenseAgg.subAggregation(peakPipelineAggBuilder);
 
         SearchResponse response = client().prepareSearch("foo_*").setSize(0).addAggregation(groupByLicenseAgg).get();
-        BytesReference bytes = XContentHelper.toXContent(response, XContentType.JSON, false);
-        XContentHelper.convertToMap(bytes, false, XContentType.JSON);
+        BytesReference bytes = org.opensearch.core.xcontent.XContentHelper.toXContent(response, MediaTypeRegistry.JSON, false);
+        XContentHelper.convertToMap(bytes, false, MediaTypeRegistry.JSON);
+        internalCluster().wipeIndices("foo_*");
     }
 }

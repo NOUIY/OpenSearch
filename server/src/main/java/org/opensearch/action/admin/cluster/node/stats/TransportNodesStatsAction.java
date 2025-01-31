@@ -37,8 +37,8 @@ import org.opensearch.action.support.ActionFilters;
 import org.opensearch.action.support.nodes.TransportNodesAction;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.io.stream.StreamOutput;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.node.NodeService;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportRequest;
@@ -118,7 +118,19 @@ public class TransportNodesStatsAction extends TransportNodesAction<
             NodesStatsRequest.Metric.ADAPTIVE_SELECTION.containedIn(metrics),
             NodesStatsRequest.Metric.SCRIPT_CACHE.containedIn(metrics),
             NodesStatsRequest.Metric.INDEXING_PRESSURE.containedIn(metrics),
-            NodesStatsRequest.Metric.SHARD_INDEXING_PRESSURE.containedIn(metrics)
+            NodesStatsRequest.Metric.SHARD_INDEXING_PRESSURE.containedIn(metrics),
+            NodesStatsRequest.Metric.SEARCH_BACKPRESSURE.containedIn(metrics),
+            NodesStatsRequest.Metric.CLUSTER_MANAGER_THROTTLING.containedIn(metrics),
+            NodesStatsRequest.Metric.WEIGHTED_ROUTING_STATS.containedIn(metrics),
+            NodesStatsRequest.Metric.FILE_CACHE_STATS.containedIn(metrics),
+            NodesStatsRequest.Metric.TASK_CANCELLATION.containedIn(metrics),
+            NodesStatsRequest.Metric.SEARCH_PIPELINE.containedIn(metrics),
+            NodesStatsRequest.Metric.RESOURCE_USAGE_STATS.containedIn(metrics),
+            NodesStatsRequest.Metric.SEGMENT_REPLICATION_BACKPRESSURE.containedIn(metrics),
+            NodesStatsRequest.Metric.REPOSITORIES.containedIn(metrics),
+            NodesStatsRequest.Metric.ADMISSION_CONTROL.containedIn(metrics),
+            NodesStatsRequest.Metric.CACHE_STATS.containedIn(metrics),
+            NodesStatsRequest.Metric.REMOTE_STORE.containedIn(metrics)
         );
     }
 
@@ -129,7 +141,7 @@ public class TransportNodesStatsAction extends TransportNodesAction<
      */
     public static class NodeStatsRequest extends TransportRequest {
 
-        NodesStatsRequest request;
+        protected NodesStatsRequest request;
 
         public NodeStatsRequest(StreamInput in) throws IOException {
             super(in);

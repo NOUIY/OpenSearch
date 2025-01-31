@@ -59,7 +59,7 @@ import org.apache.lucene.util.BytesRef;
 import org.opensearch.common.lucene.search.Queries;
 import org.opensearch.common.regex.Regex;
 import org.opensearch.common.unit.Fuzziness;
-import org.opensearch.core.internal.io.IOUtils;
+import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.index.IndexSettings;
 import org.opensearch.index.mapper.DateFieldMapper.DateFieldType;
 import org.opensearch.index.mapper.FieldNamesFieldMapper;
@@ -110,7 +110,7 @@ public class QueryStringQueryParser extends XQueryParser {
     private ZoneId timeZone;
     private Fuzziness fuzziness = Fuzziness.AUTO;
     private int fuzzyMaxExpansions = FuzzyQuery.defaultMaxExpansions;
-    private MultiTermQuery.RewriteMethod fuzzyRewriteMethod = MultiTermQuery.CONSTANT_SCORE_REWRITE;
+    private MultiTermQuery.RewriteMethod fuzzyRewriteMethod = MultiTermQuery.CONSTANT_SCORE_BLENDED_REWRITE;
     private boolean fuzzyTranspositions = FuzzyQuery.defaultTranspositions;
 
     /**
@@ -514,6 +514,7 @@ public class QueryStringQueryParser extends XQueryParser {
                 getFuzzyPrefixLength(),
                 fuzzyMaxExpansions,
                 fuzzyTranspositions,
+                fuzzyRewriteMethod,
                 context
             );
         } catch (RuntimeException e) {
@@ -527,11 +528,7 @@ public class QueryStringQueryParser extends XQueryParser {
     @Override
     protected Query newFuzzyQuery(Term term, float minimumSimilarity, int prefixLength) {
         int numEdits = Fuzziness.build(minimumSimilarity).asDistance(term.text());
-        if (fuzzyRewriteMethod != null) {
-            return new FuzzyQuery(term, numEdits, prefixLength, fuzzyMaxExpansions, fuzzyTranspositions, fuzzyRewriteMethod);
-        } else {
-            return new FuzzyQuery(term, numEdits, prefixLength, fuzzyMaxExpansions, fuzzyTranspositions);
-        }
+        return new FuzzyQuery(term, numEdits, prefixLength, fuzzyMaxExpansions, fuzzyTranspositions, fuzzyRewriteMethod);
     }
 
     @Override
@@ -729,7 +726,8 @@ public class QueryStringQueryParser extends XQueryParser {
             if (getAllowLeadingWildcard() == false && (termStr.startsWith("*") || termStr.startsWith("?"))) {
                 throw new ParseException("'*' or '?' not allowed as first character in WildcardQuery");
             }
-            return currentFieldType.wildcardQuery(termStr, getMultiTermRewriteMethod(), context);
+            // query string query is always normalized
+            return currentFieldType.normalizedWildcardQuery(termStr, getMultiTermRewriteMethod(), context);
         } catch (RuntimeException e) {
             if (lenient) {
                 return newLenientFieldQuery(field, e);

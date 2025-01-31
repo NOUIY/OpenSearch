@@ -50,6 +50,7 @@ import org.apache.lucene.util.AttributeSource;
 import org.apache.lucene.util.BitSet;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.IOBooleanSupplier;
 import org.opensearch.common.Nullable;
 
 import java.io.IOException;
@@ -140,7 +141,7 @@ public class FilterableTermsEnum extends TermsEnum {
             }
             enums.add(new Holder(termsEnum, bits));
         }
-        this.enums = enums.toArray(new Holder[enums.size()]);
+        this.enums = enums.toArray(new Holder[0]);
     }
 
     @Override
@@ -254,6 +255,11 @@ public class FilterableTermsEnum extends TermsEnum {
 
     @Override
     public BytesRef next() throws IOException {
+        throw new UnsupportedOperationException(UNSUPPORTED_MESSAGE);
+    }
+
+    @Override
+    public IOBooleanSupplier prepareSeekExact(BytesRef text) throws IOException {
         throw new UnsupportedOperationException(UNSUPPORTED_MESSAGE);
     }
 }

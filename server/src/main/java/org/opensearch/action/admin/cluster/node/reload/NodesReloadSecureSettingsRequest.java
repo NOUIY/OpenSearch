@@ -32,19 +32,16 @@
 
 package org.opensearch.action.admin.cluster.node.reload;
 
-import org.opensearch.LegacyESVersion;
 import org.opensearch.action.support.nodes.BaseNodesRequest;
-import org.opensearch.common.io.stream.StreamInput;
-
-import java.io.IOException;
-
 import org.opensearch.common.CharArrays;
 import org.opensearch.common.Nullable;
-import org.opensearch.common.bytes.BytesArray;
-import org.opensearch.common.bytes.BytesReference;
-import org.opensearch.common.io.stream.StreamOutput;
-import org.opensearch.common.settings.SecureString;
+import org.opensearch.core.common.bytes.BytesArray;
+import org.opensearch.core.common.bytes.BytesReference;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.core.common.settings.SecureString;
 
+import java.io.IOException;
 import java.util.Arrays;
 
 /**
@@ -63,23 +60,21 @@ public class NodesReloadSecureSettingsRequest extends BaseNodesRequest<NodesRelo
     private SecureString secureSettingsPassword;
 
     public NodesReloadSecureSettingsRequest() {
-        super((String[]) null);
+        super(true, (String[]) null);
     }
 
     public NodesReloadSecureSettingsRequest(StreamInput in) throws IOException {
         super(in);
-        if (in.getVersion().onOrAfter(LegacyESVersion.V_7_7_0)) {
-            final BytesReference bytesRef = in.readOptionalBytesReference();
-            if (bytesRef != null) {
-                byte[] bytes = BytesReference.toBytes(bytesRef);
-                try {
-                    this.secureSettingsPassword = new SecureString(CharArrays.utf8BytesToChars(bytes));
-                } finally {
-                    Arrays.fill(bytes, (byte) 0);
-                }
-            } else {
-                this.secureSettingsPassword = null;
+        final BytesReference bytesRef = in.readOptionalBytesReference();
+        if (bytesRef != null) {
+            byte[] bytes = BytesReference.toBytes(bytesRef);
+            try {
+                this.secureSettingsPassword = new SecureString(CharArrays.utf8BytesToChars(bytes));
+            } finally {
+                Arrays.fill(bytes, (byte) 0);
             }
+        } else {
+            this.secureSettingsPassword = null;
         }
     }
 
@@ -89,7 +84,7 @@ public class NodesReloadSecureSettingsRequest extends BaseNodesRequest<NodesRelo
      * nodes.
      */
     public NodesReloadSecureSettingsRequest(String... nodesIds) {
-        super(nodesIds);
+        super(true, nodesIds);
     }
 
     @Nullable

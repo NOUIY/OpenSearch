@@ -51,6 +51,8 @@ import static org.apache.lucene.search.uhighlight.CustomUnifiedHighlighter.MULTI
 class CustomFieldHighlighter extends FieldHighlighter {
     private static final Passage[] EMPTY_PASSAGE = new Passage[0];
 
+    private static final Comparator<Passage> DEFAULT_PASSAGE_SORT_COMPARATOR = Comparator.comparingInt(Passage::getStartOffset);
+
     private final Locale breakIteratorLocale;
     private final int noMatchSize;
     private String fieldValue;
@@ -66,7 +68,16 @@ class CustomFieldHighlighter extends FieldHighlighter {
         PassageFormatter passageFormatter,
         int noMatchSize
     ) {
-        super(field, fieldOffsetStrategy, breakIterator, passageScorer, maxPassages, maxNoHighlightPassages, passageFormatter);
+        super(
+            field,
+            fieldOffsetStrategy,
+            breakIterator,
+            passageScorer,
+            maxPassages,
+            maxNoHighlightPassages,
+            passageFormatter,
+            DEFAULT_PASSAGE_SORT_COMPARATOR
+        );
         this.breakIteratorLocale = breakIteratorLocale;
         this.noMatchSize = noMatchSize;
     }
@@ -163,7 +174,7 @@ class CustomFieldHighlighter extends FieldHighlighter {
         } while (off.nextPosition());
         maybeAddPassage(passageQueue, passageScorer, passage, contentLength);
 
-        Passage[] passages = passageQueue.toArray(new Passage[passageQueue.size()]);
+        Passage[] passages = passageQueue.toArray(new Passage[0]);
         // sort in ascending order
         Arrays.sort(passages, Comparator.comparingInt(Passage::getStartOffset));
         return passages;

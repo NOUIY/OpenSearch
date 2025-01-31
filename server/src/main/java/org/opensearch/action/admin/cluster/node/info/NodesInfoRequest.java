@@ -32,10 +32,10 @@
 
 package org.opensearch.action.admin.cluster.node.info;
 
-import org.opensearch.LegacyESVersion;
 import org.opensearch.action.support.nodes.BaseNodesRequest;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.io.stream.StreamOutput;
+import org.opensearch.common.annotation.PublicApi;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -48,11 +48,12 @@ import java.util.stream.Collectors;
 /**
  * A request to get node (cluster) level information.
  *
- * @opensearch.internal
+ * @opensearch.api
  */
+@PublicApi(since = "1.0.0")
 public class NodesInfoRequest extends BaseNodesRequest<NodesInfoRequest> {
 
-    private Set<String> requestedMetrics = Metric.allMetrics();
+    private Set<String> requestedMetrics = Metric.defaultMetrics();
 
     /**
      * Create a new NodeInfoRequest from a {@link StreamInput} object.
@@ -63,22 +64,7 @@ public class NodesInfoRequest extends BaseNodesRequest<NodesInfoRequest> {
     public NodesInfoRequest(StreamInput in) throws IOException {
         super(in);
         requestedMetrics.clear();
-        if (in.getVersion().before(LegacyESVersion.V_7_7_0)) {
-            // prior to version 8.x, a NodesInfoRequest was serialized as a list
-            // of booleans in a fixed order
-            optionallyAddMetric(in.readBoolean(), Metric.SETTINGS.metricName());
-            optionallyAddMetric(in.readBoolean(), Metric.OS.metricName());
-            optionallyAddMetric(in.readBoolean(), Metric.PROCESS.metricName());
-            optionallyAddMetric(in.readBoolean(), Metric.JVM.metricName());
-            optionallyAddMetric(in.readBoolean(), Metric.THREAD_POOL.metricName());
-            optionallyAddMetric(in.readBoolean(), Metric.TRANSPORT.metricName());
-            optionallyAddMetric(in.readBoolean(), Metric.HTTP.metricName());
-            optionallyAddMetric(in.readBoolean(), Metric.PLUGINS.metricName());
-            optionallyAddMetric(in.readBoolean(), Metric.INGEST.metricName());
-            optionallyAddMetric(in.readBoolean(), Metric.INDICES.metricName());
-        } else {
-            requestedMetrics.addAll(Arrays.asList(in.readStringArray()));
-        }
+        requestedMetrics.addAll(Arrays.asList(in.readStringArray()));
     }
 
     /**
@@ -86,8 +72,8 @@ public class NodesInfoRequest extends BaseNodesRequest<NodesInfoRequest> {
      * for all nodes will be returned.
      */
     public NodesInfoRequest(String... nodesIds) {
-        super(nodesIds);
-        all();
+        super(false, nodesIds);
+        defaultMetrics();
     }
 
     /**
@@ -99,10 +85,21 @@ public class NodesInfoRequest extends BaseNodesRequest<NodesInfoRequest> {
     }
 
     /**
-     * Sets to return all the data.
+     * Sets to return data for all the metrics.
+     * See {@link Metric}
      */
     public NodesInfoRequest all() {
         requestedMetrics.addAll(Metric.allMetrics());
+        return this;
+    }
+
+    /**
+     * Sets to return data for default metrics only.
+     * See {@link Metric}
+     * See {@link Metric#defaultMetrics()}.
+     */
+    public NodesInfoRequest defaultMetrics() {
+        requestedMetrics.addAll(Metric.defaultMetrics());
         return this;
     }
 
@@ -165,27 +162,12 @@ public class NodesInfoRequest extends BaseNodesRequest<NodesInfoRequest> {
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         super.writeTo(out);
-        if (out.getVersion().before(LegacyESVersion.V_7_7_0)) {
-            // prior to version 8.x, a NodesInfoRequest was serialized as a list
-            // of booleans in a fixed order
-            out.writeBoolean(Metric.SETTINGS.containedIn(requestedMetrics));
-            out.writeBoolean(Metric.OS.containedIn(requestedMetrics));
-            out.writeBoolean(Metric.PROCESS.containedIn(requestedMetrics));
-            out.writeBoolean(Metric.JVM.containedIn(requestedMetrics));
-            out.writeBoolean(Metric.THREAD_POOL.containedIn(requestedMetrics));
-            out.writeBoolean(Metric.TRANSPORT.containedIn(requestedMetrics));
-            out.writeBoolean(Metric.HTTP.containedIn(requestedMetrics));
-            out.writeBoolean(Metric.PLUGINS.containedIn(requestedMetrics));
-            out.writeBoolean(Metric.INGEST.containedIn(requestedMetrics));
-            out.writeBoolean(Metric.INDICES.containedIn(requestedMetrics));
-        } else {
-            out.writeStringArray(requestedMetrics.toArray(new String[0]));
-        }
+        out.writeStringArray(requestedMetrics.toArray(new String[0]));
     }
 
     /**
      * An enumeration of the "core" sections of metrics that may be requested
-     * from the nodes information endpoint. Eventually this list list will be
+     * from the nodes information endpoint. Eventually this list will be
      * pluggable.
      */
     public enum Metric {
@@ -199,7 +181,8 @@ public class NodesInfoRequest extends BaseNodesRequest<NodesInfoRequest> {
         PLUGINS("plugins"),
         INGEST("ingest"),
         AGGREGATIONS("aggregations"),
-        INDICES("indices");
+        INDICES("indices"),
+        SEARCH_PIPELINES("search_pipelines");
 
         private String metricName;
 
@@ -215,8 +198,25 @@ public class NodesInfoRequest extends BaseNodesRequest<NodesInfoRequest> {
             return metricNames.contains(this.metricName());
         }
 
+        /**
+         * Return all available metrics.
+         * See {@link Metric}
+         */
         public static Set<String> allMetrics() {
             return Arrays.stream(values()).map(Metric::metricName).collect(Collectors.toSet());
+        }
+
+        /**
+         * Return "the default" set of metrics.
+         * Similar to {@link #allMetrics()} except {@link Metric#SEARCH_PIPELINES} metric is not included.
+         * <br>
+         * The motivation to define the default set of metrics was to keep the default response
+         * size at bay. Metrics that are NOT included in the default set were typically introduced later
+         * and are considered to contain specific type of information that is not usually useful unless you
+         * know that you really need it.
+         */
+        public static Set<String> defaultMetrics() {
+            return allMetrics().stream().filter(metric -> !(metric.equals(SEARCH_PIPELINES.metricName()))).collect(Collectors.toSet());
         }
     }
 }
